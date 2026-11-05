@@ -1,0 +1,20 @@
+# Third-party downloads: not ours to redistribute.
+*.zip
+*.pak
+*.ucas
+*.utoc
+
+# UEVR runtime output and per-user data if a profile folder is copied in.
+*.dmp
+log.txt
+imgui.ini
+profile/*/data/
+profile/*/uobjecthook/
+profile/*/cvars_*.txt
+profile/*/cameras.txt
+
+# Editor / OS clutter.
+.DS_Store
+Thumbs.db
+*.swp
+*~
