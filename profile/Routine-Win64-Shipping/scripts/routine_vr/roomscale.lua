@@ -142,9 +142,24 @@ function M.chord_sources()
     return from_bits, (b_ok and b) == true, (y_ok and y) == true
 end
 
+-- Controllers without B/Y list their own chords (devices/*.lua: recenter).
+local function device_chord_held()
+    local chords = input.device and input.device.recenter
+    if chords == nil then return false end
+    for _, chord in ipairs(chords) do
+        local all = #chord > 0
+        for _, name in ipairs(chord) do
+            local ok, v = pcall(input.is_held, name)
+            if not (ok and v) then all = false end
+        end
+        if all then return true end
+    end
+    return false
+end
+
 local function update_recenter_chord(delta)
     local from_bits, b_held, y_held = M.chord_sources()
-    local held = from_bits or (b_held and y_held)
+    local held = from_bits or (b_held and y_held) or device_chord_held()
     if not held then
         recenter_held, M.recenter_progress = 0.0, 0.0
         return

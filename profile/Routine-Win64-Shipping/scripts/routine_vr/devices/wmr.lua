@@ -28,4 +28,6 @@ return {
     },
 
     hand_offset = { rot = { 0, 0, 0 }, loc = { 0, 0, 0 } },
+    -- No B/Y buttons (or not on every model): click both pads/sticks.
+    recenter = { { "b_r", "b_l" }, { "stick_click_l", "stick_click_r" } },
 }

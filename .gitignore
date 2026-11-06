@@ -18,3 +18,4 @@ profile/*/cameras.txt
 Thumbs.db
 *.swp
 *~
+dist/

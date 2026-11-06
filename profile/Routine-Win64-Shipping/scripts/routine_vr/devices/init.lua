@@ -7,6 +7,11 @@
 --   triggers          { LT = {...}, RT = {...} } same format
 --   uevr              optional UEVR mod values applied when the device is selected
 --   hand_offset       default rotation/location offset for attached components
+--   glove             optional { left = {rot, loc}, right = {rot, loc} } added to
+--                     the motion-hands glove offset for this controller
+--                     (zero under OpenXR, whose poses are uniform)
+--   recenter          optional list of chords (lists of input names) that
+--                     recenter when held; default right B + left Y
 --
 -- Physical input names come from M.inputs below. They map onto UEVR's action
 -- set, which is identical for OpenXR and OpenVR, so a device module never
@@ -47,6 +52,59 @@ M.inputs = {
 
 M.order = { "quest_touch", "index_knuckles", "pico", "wmr", "vive_wands" }
 
+-- Auto-detect: UEVR logs the headset's name at startup ("OpenXR system
+-- Name: Meta Quest 3 on WiVRn"); the Lua API has no call for it, so the log
+-- is read. The headset name stands in for the controllers that usually come
+-- with it. First match wins (lower-case substrings).
+M.PATTERNS = {
+    { "vive focus", "quest_touch" }, { "xr elite", "quest_touch" }, { "cosmos", "quest_touch" },
+    { "quest", "quest_touch" }, { "oculus", "quest_touch" }, { "rift", "quest_touch" }, { "meta", "quest_touch" },
+    { "index", "index_knuckles" }, { "valve", "index_knuckles" }, { "bigscreen", "index_knuckles" },
+    { "beyond", "index_knuckles" }, { "varjo", "index_knuckles" }, { "pimax", "index_knuckles" },
+    { "pico", "pico" },
+    { "reverb", "wmr" }, { "odyssey", "wmr" }, { "mixed reality", "wmr" }, { "wmr", "wmr" },
+    { "holographic", "wmr" },
+    { "playstation", "quest_touch" }, { "psvr", "quest_touch" },
+    { "vive", "vive_wands" },
+}
+
+function M.from_system_name(name)
+    if name == nil then return nil end
+    local low = name:lower()
+    for _, p in ipairs(M.PATTERNS) do
+        if low:find(p[1], 1, true) then return p[2] end
+    end
+    return nil
+end
+
+local LOG_NAMES = { "OpenXR system Name: ([^\r\n]+)", "[Ss]ystem [Nn]ame: ([^\r\n]+)" }
+
+-- The headset name from UEVR's log, or nil (log not readable or not yet
+-- written). Tries Lua's io (the profile folder under %APPDATA%), then
+-- UEVR's fs, which is rooted in the profile's data folder.
+function M.read_system_name()
+    local text = nil
+    pcall(function()
+        local appdata = os.getenv("APPDATA")
+        if appdata == nil then return end
+        local f = io.open(appdata .. "\\UnrealVRMod\\Routine-Win64-Shipping\\log.txt", "rb")
+        if f then
+            text = f:read("a")
+            f:close()
+        end
+    end)
+    if text == nil then
+        pcall(function() text = fs.read("../log.txt") end)
+    end
+    if type(text) ~= "string" then return nil end
+    local found = nil
+    for _, pat in ipairs(LOG_NAMES) do
+        for name in text:gmatch(pat) do found = name end -- the last one is this session's
+        if found then break end
+    end
+    return found
+end
+
 local cache = {}
 
 function M.get(id)
@@ -75,10 +133,21 @@ function M.index_of(id)
     return 1
 end
 
+-- OpenXR gives every controller the same grip and aim poses, so the
+-- per-controller pitch fixes are only for OpenVR (SteamVR), where the raw
+-- poses differ by controller. Under OpenXR the pitch offset stays 0, which
+-- also keeps the glove alignment the same across controllers.
+function M.uses_openvr()
+    local ok, v = pcall(function() return uevr.params.vr.is_openvr() end)
+    return ok and v == true
+end
+
 -- Push the device's UEVR overrides (e.g. controller pitch) into UEVR.
 function M.apply_uevr_overrides(device)
     if device.uevr == nil then return end
+    local openvr = M.uses_openvr()
     for key, value in pairs(device.uevr) do
+        if key == "VR_ControllerPitchOffset" and not openvr then value = "0.000000" end
         uevr.params.vr.set_mod_value(key, tostring(value))
     end
 end

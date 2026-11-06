@@ -25,6 +25,7 @@ print("[routine_vr] loaded")
 
 uevr.sdk.callbacks.on_pre_engine_tick(function(engine, delta)
     input.begin_frame()
+    input.tick_detect(delta)
     roomscale.tick(delta)
     game.tick(delta)
     movement.tick(delta)

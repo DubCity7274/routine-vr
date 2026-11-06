@@ -506,3 +506,22 @@ The community profile sits on uevrlib (`uevr_utils`, `hands`, `animation`,
 uevrlib is the basis here, not a dependency to copy wholesale. Its modules
 are large and generic, so port the pieces with tests, the way game.lua and
 effects.lua were.
+
+## Headset support and releases (beta prep)
+
+- devices.read_system_name() reads UEVR's log.txt (via io under %APPDATA%,
+  falling back to fs.read("../log.txt")) for "OpenXR system Name: ...";
+  devices.from_system_name() maps it to a layout (PATTERNS, first match).
+  settings.device = "auto" (default; old saved "quest_touch" migrates);
+  input.tick_detect() retries every 2 s for a minute because UEVR starts
+  OpenXR after the scripts load.
+- VR_ControllerPitchOffset from a layout is applied only under OpenVR;
+  OpenXR's grip/aim poses are uniform across controllers, so it's 0 there
+  and the glove alignment carries over. Layouts can carry a glove
+  adjustment (zero today) for future per-controller calibrations.
+- Layouts without B/Y list recenter chords (Vive, WMR: both stick/pad
+  clicks).
+- version.lua holds the version (panel title, release names).
+  tools/make-release.sh builds dist/routine-vr-<v>.zip (git archive of
+  HEAD) and dist/routine-vr-<v>-profile.zip (just the profile folder).
+

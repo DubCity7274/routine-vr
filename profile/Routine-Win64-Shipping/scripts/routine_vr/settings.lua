@@ -6,8 +6,10 @@ local M = {}
 local FILE = "routine_vr.json"
 
 M.defaults = {
-    -- Which controller layout to use. See devices/init.lua for the list.
-    device = "quest_touch",
+    -- Which controller layout to use: "auto" (from the headset's name in
+    -- UEVR's log) or an id from devices/init.lua.
+    device = "auto",
+    device_layout = 2,
 
     -- false = let UEVR's built-in button mapping through untouched. Off by
     -- default until Routine's controls are better understood (the user asked
@@ -150,6 +152,12 @@ end
 M.INSPECT_POSE = { left = { 0, -90, 0 }, right = { 0, 0, 0 } }
 
 function M.migrate(data, loaded)
+    -- Layout 1 had no auto-detect and saved the Touch default; move to auto.
+    if loaded.device_layout ~= 2 then
+        data.device_layout = 2
+        if data.device == "quest_touch" then data.device = "auto" end
+    end
+
     -- Inspect layout 2 kept the C.A.T. in the right hand, back when touch
     -- seemed to need inspect; it doesn't, so an untouched layout-2 pose
     -- goes back to the left hand.

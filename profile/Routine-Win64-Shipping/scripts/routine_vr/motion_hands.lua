@@ -140,6 +140,22 @@ function M.palm_transform(ctrl_loc, ctrl_rot, offset)
     return { X = ctrl_loc.X + d.x, Y = ctrl_loc.Y + d.y, Z = ctrl_loc.Z + d.z }, { Pitch = p, Yaw = y, Roll = r }
 end
 
+-- The glove's offset from its controller: the panel's tuning plus the
+-- controller layout's own adjustment (devices/*.lua: glove), which is zero
+-- for every layout under OpenXR since its poses are uniform across
+-- controllers. It's there so a calibration for another controller can be
+-- shipped without touching anyone's own tuning.
+function M.hand_offset(side)
+    local user = settings.get("hand_" .. side)
+    local input = require("routine_vr.input")
+    local dev = input.device and input.device.glove and input.device.glove[side]
+    if dev == nil then return user end
+    local ur, ul = user.rot or { 0, 0, 0 }, user.loc or { 0, 0, 0 }
+    local dr, dl = dev.rot or { 0, 0, 0 }, dev.loc or { 0, 0, 0 }
+    return { rot = { ur[1] + dr[1], ur[2] + dr[2], ur[3] + dr[3] },
+             loc = { ul[1] + dl[1], ul[2] + dl[2], ul[3] + dl[3] } }
+end
+
 -- The game's arms mesh component on the pawn.
 -- One of the suit's meshes on the pawn by asset name ("_Arms", "_Body").
 local function find_part(pawn, tag)
@@ -542,7 +558,7 @@ local function pose_palm(side)
     one.X, one.Y, one.Z = 1, 1, 1
     local tiny = mesh:K2_GetComponentScale()
     tiny.X, tiny.Y, tiny.Z = COLLAPSE, COLLAPSE, COLLAPSE
-    local loc, rot = M.palm_transform(ctrl_loc, ctrl_rot, settings.get("hand_" .. side))
+    local loc, rot = M.palm_transform(ctrl_loc, ctrl_rot, M.hand_offset(side))
     local pq = M.rot_to_quat(rot.Pitch, rot.Yaw, rot.Roll)
     local armed = false
     if settings.get("arm_ik") and settings.get("show_body") then

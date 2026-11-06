@@ -60,13 +60,20 @@ local function draw_controllers()
         d.rb_in and "on" or "off", d.rb_out and "on" or "off", d.lt_out or 0, d.rx_out or 0))
     if imgui.separator then imgui.separator() end
 
-    local changed, idx = imgui.combo("Controller layout", devices.index_of(settings.get("device")), devices.names())
+    -- First entry: auto-detect from the headset name in UEVR's log.
+    local names = { "Auto-detect" }
+    for _, n in ipairs(devices.names()) do names[#names + 1] = n end
+    local cur = settings.get("device") == "auto" and 1 or devices.index_of(settings.get("device")) + 1
+    local changed, idx = imgui.combo("Controller layout", cur, names)
     if changed then
-        local id = devices.order[idx]
+        local id = idx == 1 and "auto" or devices.order[idx - 1]
         settings.set("device", id)
         input.set_device(id)
         hands.mark_dirty()
     end
+    imgui.text("Using: " .. input.device.name .. (input.auto_device and
+        (" (headset: " .. tostring(input.detected_name or "not known yet") .. ")") or " (chosen by hand)"))
+    imgui.text("Runtime: " .. (devices.uses_openvr() and "OpenVR (per-controller pitch fix on)" or "OpenXR"))
 
     if imgui.tree_node("Button remaps") then
         imgui.text("Send a layout button to the game as a different gamepad button.")
@@ -338,7 +345,7 @@ local function section(title, draw)
 end
 
 function M.draw()
-    imgui.text("Routine VR")
+    imgui.text("Routine VR " .. require("routine_vr.version"))
     draw_status()
 
     section("Laser", draw_laser)

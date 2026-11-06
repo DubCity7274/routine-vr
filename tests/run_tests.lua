@@ -188,6 +188,7 @@ check(d.snap_turn == false and d.move_direction == "head" and d.physical_crouch 
 
 check(d.custom_buttons == false, "defaults: UEVR's built-in button mapping")
 check(d.lt_raises_cat == false and d.cat_grip == "hold", "defaults: the grip raises the C.A.T., LT doesn't")
+check(d.device == "auto", "defaults: controller layout auto-detected")
 
 -- The behaviour tests below exercise the non-default options.
 settings.data.custom_buttons = true
@@ -897,6 +898,15 @@ tick(0.1)
 poll(XINPUT_GAMEPAD_X | XINPUT_GAMEPAD_Y)
 tick(3.2)
 check(fake.recentered == before + 2, "right B arriving as X (with Y): recenter")
+-- Controllers without B/Y: their layout's chord (Vive: both pad clicks).
+poll(0)
+tick(0.1)
+input.set_device("vive_wands")
+hold("JoystickClick", "left", true); hold("JoystickClick", "right", true)
+tick(3.2)
+check(fake.recentered == before + 3, "Vive wands: both pad clicks held recenter")
+hold("JoystickClick", "left", false); hold("JoystickClick", "right", false)
+input.set_device("quest_touch")
 poll(0)
 tick(0.1)
 
@@ -1020,7 +1030,42 @@ tick(0.6)
 ---------------------------------------------------------------------------
 
 input.set_device("vive_wands")
-check(fake.mod_values.VR_ControllerPitchOffset == "-30.000000", "vive layout pushes its pitch offset")
+check(fake.mod_values.VR_ControllerPitchOffset == "0.000000", "OpenXR: no per-controller pitch fix (OpenXR poses are already uniform)")
+uevr.params.vr.is_openvr = function() return true end
+input.set_device("vive_wands")
+check(fake.mod_values.VR_ControllerPitchOffset == "-30.000000", "OpenVR: the vive layout pushes its pitch offset")
+uevr.params.vr.is_openvr = nil
+
+-- Auto-detect from the headset name in UEVR's log.
+local devices = require("routine_vr.devices")
+for _, c in ipairs({ { "Meta Quest 3 on WiVRn", "quest_touch" }, { "Oculus Rift S", "quest_touch" },
+                     { "Valve Index", "index_knuckles" }, { "Bigscreen Beyond", "index_knuckles" },
+                     { "HP Reverb G2", "wmr" }, { "Windows Mixed Reality", "wmr" },
+                     { "PICO 4", "pico" }, { "HTC Vive Pro", "vive_wands" }, { "VIVE Focus 3", "quest_touch" },
+                     { "Some New Headset", nil } }) do
+    check(devices.from_system_name(c[1]) == c[2], "headset '" .. c[1] .. "' -> " .. tostring(c[2]))
+end
+local real_open, real_getenv = io.open, os.getenv
+local log_text = "[info] [OpenXR] OpenXR system Name: Valve Index\r\n[info] other\r\n"
+os.getenv = function(k) if k == "APPDATA" then return "C:\\users\\steamuser\\AppData\\Roaming" end return real_getenv(k) end
+io.open = function(path, mode)
+    if path:find("UnrealVRMod", 1, true) then
+        return { read = function() return log_text end, close = function() end }
+    end
+    return real_open(path, mode)
+end
+check(devices.read_system_name() == "Valve Index", "reads the headset name from UEVR's log")
+input.set_device("auto")
+check(input.device.id == "index_knuckles" and input.auto_device and input.detected_name == "Valve Index",
+    "auto: Index headset -> Index layout")
+log_text = ""
+input.set_device("auto")
+check(input.device.id == "quest_touch" and input.detected_name == nil, "auto, name not logged yet: Touch layout meanwhile")
+log_text = "OpenXR system Name: PICO 4\r\n"
+for _ = 1, 3 do input.tick_detect(1.0) end
+check(input.device.id == "pico", "auto keeps looking until UEVR logs the headset")
+io.open, os.getenv = real_open, real_getenv
+input.set_device("vive_wands")
 release_all()
 tick(0.02)
 hold("JoystickClick", "right", true)
@@ -1395,6 +1440,12 @@ ma[2].loc = { 5, 0, 0 }
 saved_json["routine_vr.json"] = { attachments = ma, attachments_layout = 2 }
 settings.load()
 check(settings.get("attachments")[2].loc[1] == 5, "migrated layout left alone after that")
+saved_json["routine_vr.json"] = { device = "quest_touch" }
+settings.load()
+check(settings.get("device") == "auto", "old saved Touch default moves to auto-detect")
+saved_json["routine_vr.json"] = { device = "index_knuckles", device_layout = 2 }
+settings.load()
+check(settings.get("device") == "index_knuckles", "a layout picked by hand is kept")
 saved_json["routine_vr.json"] = { cat_inspect = { hand = "right", rot = { 0, 0, 0 }, loc = { 0, 0, 0 } }, cat_inspect_layout = 2 }
 settings.load()
 check(settings.get("cat_inspect").hand == "left" and settings.get("cat_inspect").rot[2] == -90

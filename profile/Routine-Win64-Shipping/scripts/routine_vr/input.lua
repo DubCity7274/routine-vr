@@ -61,10 +61,36 @@ M.right_grip = false          -- right grip as read on the engine tick (game.lua
 M.diag = { polls = 0, gate = "?", rb_in = false, rb_out = false, lt_out = 0, rx_out = 0,
            rgrip = false, clear = false, wb_in = 0, wb_clear = -1, wb_out = 0 }
 
+M.auto_device = false         -- the layout follows the detected headset
+M.detected_name = nil         -- headset name from UEVR's log, once read
+local detect_timer, detect_tries = 0.0, 0
+local DETECT_INTERVAL, DETECT_TRIES = 2.0, 30
+
+-- id = a layout from devices.order, or "auto" (detect from the headset;
+-- Touch layout until the name is known).
 function M.set_device(id)
+    M.auto_device = id == "auto"
+    if M.auto_device then
+        M.detected_name = devices.read_system_name()
+        id = devices.from_system_name(M.detected_name) or "quest_touch"
+        detect_timer, detect_tries = 0.0, 0
+    end
     M.device = devices.get(id)
     devices.apply_uevr_overrides(M.device)
-    print("[routine_vr] controller layout: " .. M.device.name)
+    print("[routine_vr] controller layout: " .. M.device.name
+        .. (M.auto_device and (" (auto, headset: " .. tostring(M.detected_name) .. ")") or ""))
+end
+
+-- Auto-detect keeps looking until UEVR has logged the headset (it starts
+-- OpenXR after the scripts load), for about a minute.
+function M.tick_detect(delta)
+    if not M.auto_device or M.detected_name ~= nil or detect_tries >= DETECT_TRIES then return end
+    detect_timer = detect_timer + delta
+    if detect_timer < DETECT_INTERVAL then return end
+    detect_timer = 0.0
+    detect_tries = detect_tries + 1
+    local name = devices.read_system_name()
+    if name ~= nil then M.set_device("auto") end
 end
 
 function M.reset()
