@@ -10,6 +10,7 @@
 
 local settings = require("routine_vr.settings")
 local hands = require("routine_vr.hands")
+local handed = require("routine_vr.handed")
 
 local M = {}
 
@@ -30,7 +31,8 @@ function M.holster(head, rot)
     if len < 1e-4 then fwd, len = { x = 0, z = -1 }, 1 end -- looking straight down/up
     local fx, fz = fwd.x / len, fwd.z / len
     local rx, rz = -fz, fx -- right of the facing direction
-    local side, back = settings.get("hip_side"), settings.get("hip_back")
+    -- Left-handers holster on the left hip.
+    local side, back = settings.get("hip_side") * (handed.is_left() and -1 or 1), settings.get("hip_back")
     return {
         x = head.x + rx * side - fx * back,
         y = head.y - settings.get("hip_drop"),
@@ -41,7 +43,8 @@ end
 local function read()
     local ok = pcall(function()
         vr.get_pose(vr.get_hmd_index(), hmd_pos, hmd_rot)
-        vr.get_pose(vr.get_right_controller_index(), hand_pos, hand_rot)
+        local idx = handed.is_left() and vr.get_left_controller_index() or vr.get_right_controller_index()
+        vr.get_pose(idx, hand_pos, hand_rot)
     end)
     if not ok then return nil end
     local h = M.holster(hmd_pos, hmd_rot)
@@ -54,7 +57,10 @@ function M.tick(delta)
     local was = M.at_hip
     M.at_hip = M.distance ~= nil and M.distance <= settings.get("hip_radius")
     if M.at_hip and not was and settings.get("cat_grip") == "hip" then
-        pcall(function() vr.trigger_haptic_vibration(0.0, 0.03, 1.0, 0.3, vr.get_right_joystick_source()) end)
+        pcall(function()
+            local src = handed.is_left() and vr.get_left_joystick_source() or vr.get_right_joystick_source()
+            vr.trigger_haptic_vibration(0.0, 0.03, 1.0, 0.3, src)
+        end)
     end
 end
 

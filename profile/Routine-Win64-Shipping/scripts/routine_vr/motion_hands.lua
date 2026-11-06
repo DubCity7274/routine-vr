@@ -20,6 +20,10 @@
 local settings = require("routine_vr.settings")
 local hands = require("routine_vr.hands")
 local game = require("routine_vr.game")
+-- Required here, not in functions: UEVR only finds the mod's files while
+-- the script is first loading.
+local input = require("routine_vr.input")
+local handed = require("routine_vr.handed")
 
 local M = {}
 
@@ -68,8 +72,8 @@ local rest = {}          -- finger bone -> { q, t } relative to its parent bone 
 local modelled = {}      -- right thumb bones as the mesh models them: shaped around the C.A.T.
 local curl = { left = {}, right = {} }  -- chain -> smoothed 0..1
 M.arms = nil             -- the game's own (hidden) arms mesh: live finger poses come from it
-M.holding_cat = false    -- the C.A.T. is attached to the right glove
-local cat_home = nil     -- { root, parent, socket } where the game had the C.A.T.
+M.holding_cat = false    -- the C.A.T. is in the main hand's glove
+local cat_home = nil     -- { root, parent, socket, rel_loc, rel_rot } where the game had the C.A.T.
 local owner_pawn = nil
 local retry_wait = 0.0
 local shown = nil
@@ -147,7 +151,6 @@ end
 -- shipped without touching anyone's own tuning.
 function M.hand_offset(side)
     local user = settings.get("hand_" .. side)
-    local input = require("routine_vr.input")
     local dev = input.device and input.device.glove and input.device.glove[side]
     if dev == nil then return user end
     local ur, ul = user.rot or { 0, 0, 0 }, user.loc or { 0, 0, 0 }
@@ -286,12 +289,52 @@ function M.follow(palm_loc, palm_q, r)
     return { X = palm_loc.X + d.x, Y = palm_loc.Y + d.y, Z = palm_loc.Z + d.z }, { Pitch = p, Yaw = y, Roll = ro }
 end
 
--- The C.A.T. back where the game keeps it (its arms mesh socket).
-local function release_cat()
-    if cat_home ~= nil and M.holding_cat then
-        local h = cat_home
-        pcall(function() h.root:K2_AttachToComponent(h.parent, h.socket, 0, 0, 0, false) end)
+-- Where the C.A.T. is: "home" (where the game keeps it, on its arms mesh),
+-- "glove" (in the main hand while out) or "holster" (on the body's hip
+-- while put away, with motion hands on: the game's own lowered pose follows
+-- its hidden arms, so the C.A.T. floated in front of you while crawling).
+M.cat_place = "home"
+local hit_result = nil
+
+-- Set a component's relative transform (UE loc/rot tables).
+local function set_relative(comp, loc, rot)
+    local l = comp:K2_GetComponentLocation()
+    local r = comp:K2_GetComponentRotation()
+    l.X, l.Y, l.Z = loc[1], loc[2], loc[3]
+    r.Pitch, r.Yaw, r.Roll = rot[1], rot[2], rot[3]
+    if hit_result == nil then
+        hit_result = StructObject.new(api:find_uobject("ScriptStruct /Script/Engine.HitResult"))
     end
+    comp:K2_SetRelativeLocationAndRotation(l, r, false, hit_result, false)
+end
+
+-- Move the C.A.T. to place ("home", "glove", "holster").
+local function move_cat(place, socket)
+    local h = cat_home
+    if h == nil then return false end
+    local ok = pcall(function()
+        -- Back to the game's own relative offset first, so a holster offset
+        -- never carries over into the glove or the game's pose.
+        set_relative(h.root, h.rel_loc, h.rel_rot)
+        if place == "glove" then
+            h.root:K2_AttachToComponent(M.mesh, socket, 0, 0, 0, false)
+        elseif place == "holster" then
+            local o = settings.get("cat_holster_" .. handed.main())
+            h.root:K2_AttachToComponent(M.body, "Bone_Pelvis", 2, 2, 2, false) -- snap to the bone
+            set_relative(h.root, o.loc, o.rot)
+        else
+            h.root:K2_AttachToComponent(h.parent, h.socket, 0, 0, 0, false)
+            set_relative(h.root, h.rel_loc, h.rel_rot)
+        end
+    end)
+    if ok then M.cat_place = place end
+    return ok
+end
+
+local function release_cat()
+    if M.cat_place ~= "home" then move_cat("home") end
+    M.cat_place = "home"
+    M.cat_sig = nil
     M.holding_cat = false
     game.cat_on_glove = false
 end
@@ -593,7 +636,6 @@ end
 -- grips and triggers come from what UEVR sends (LB/RB, analog triggers),
 -- the thumb from UEVR's direct reads.
 local function curl_targets(side)
-    local input = require("routine_vr.input")
     local bits = input.xi_in or 0
     -- (Not "a and b or c": with the left grip released that fell through to
     -- the right grip, so the right grip curled both hands.)
@@ -642,8 +684,11 @@ local function pose_fingers(side, palm_loc, palm_q, rot_s, loc_s, one, delta)
     local mesh = M.mesh
     local targets = curl_targets(side)
     local preview = settings.get("finger_curl_preview")
-    -- Holding the C.A.T.: the game's own grip on its handle, no extra curl.
-    local holding = side == "right" and M.holding_cat
+    -- Holding the C.A.T.: the game's own grip on its handle, no extra curl
+    -- (the game only animates a right-hand grip; a left hand holding it
+    -- closes its fingers instead).
+    local holding = side == handed.main() and M.holding_cat
+    local game_grip = holding and side == "right"
     local axis = AXES[settings.get("finger_axis")] or AXES.z
     local sign = settings.get("finger_flip_" .. side) and -1 or 1
     local k = math.min(1.0, delta * CURL_SPEED)
@@ -651,10 +696,11 @@ local function pose_fingers(side, palm_loc, palm_q, rot_s, loc_s, one, delta)
         -- The thumb never takes the game's grip (it sank into the C.A.T.).
         -- Holding the C.A.T. it takes the mesh's modelled grip thumb, plus
         -- the panel's wrap amount; otherwise it rests and follows input.
-        local from_game = holding and chain ~= "Thumb"
-        local wrap_thumb = holding and chain == "Thumb"
+        local from_game = game_grip and chain ~= "Thumb"
+        local wrap_thumb = game_grip and chain == "Thumb"
         local target = from_game and 0 or targets[chain]
         if wrap_thumb then target = settings.get("thumb_wrap") end
+        if holding and not game_grip and chain ~= "Thumb" and chain ~= "Finger_A" then target = 1 end
         if preview > 0 then target = preview end
         local c = (curl[side][chain] or 0)
         c = c + (target - c) * k
@@ -689,7 +735,7 @@ end
 -- its arms mesh, so it sits in the hand as designed. Only while it's out;
 -- put away, it goes back to the game's arms so the game can lower it.
 local function update_cat()
-    local want = game.raised and settings.get("motion_hands")
+    local raised = game.raised and settings.get("motion_hands")
     local cls = api:find_uobject("Class /Script/Routine.RoutineGameCAT")
     local cat = cls and UEVR_UObjectHook.get_first_object_by_class(cls, false)
     local root = cat and safe(function() return cat.RootComponent end)
@@ -700,24 +746,42 @@ local function update_cat()
     end
     local addr = safe(function() return root:get_address() end) or root
     if cat_home == nil or cat_home.addr ~= addr then
-        if M.holding_cat then return end -- never learn our own glove as its home
+        if M.cat_place ~= "home" then return end -- never learn our own glove or holster as its home
         local parent = safe(function() return root.AttachParent end)
         local socket = safe(function() return root.AttachSocketName end)
+        local rl = safe(function() local v = root.RelativeLocation; return { v.X, v.Y, v.Z } end) or { 0, 0, 0 }
+        local rr = safe(function() local v = root.RelativeRotation; return { v.Pitch, v.Yaw, v.Roll } end) or { 0, 0, 0 }
         if parent == nil then return end
-        cat_home = { root = root, addr = addr, parent = parent, socket = socket }
+        cat_home = { root = root, addr = addr, parent = parent, socket = socket, rel_loc = rl, rel_rot = rr }
         M.cat_socket = safe(function() return type(socket) == "string" and socket or socket:to_string() end) or "?"
     end
-    -- game.lua unhooks the C.A.T. from the controller while cat_on_glove is
-    -- set, and puts back its relative transform; attach on the next frame.
-    game.cat_on_glove = want
-    if want and not M.holding_cat and not game.cat_hooked then
-        local mesh, h = M.mesh, cat_home
-        if pcall(function() h.root:K2_AttachToComponent(mesh, h.socket, 0, 0, 0, false) end) then
-            M.holding_cat = true
-        end
-    elseif not want and M.holding_cat then
-        release_cat()
+    -- The glove socket: the game's own (right palm), or the left palm's
+    -- matching one for left-handers.
+    local socket = cat_home.socket
+    if handed.is_left() then
+        local name = safe(function() return type(socket) == "string" and socket or socket:to_string() end) or "Bone_Palm_R_Tool"
+        socket = name:gsub("_R_", "_L_")
     end
+
+    local want
+    if raised then
+        want = "glove"
+    elseif settings.get("cat_holster") and M.body ~= nil then
+        want = "holster"
+    else
+        want = "home"
+    end
+    -- Re-place when handedness or the holster offset changes.
+    local o = settings.get("cat_holster_" .. handed.main())
+    local sig = want .. tostring(handed.is_left()) .. table.concat(o.loc, ",") .. table.concat(o.rot, ",")
+
+    -- game.lua unhooks the C.A.T. from the controller while cat_on_glove is
+    -- set, and puts back its relative transform; move on the next frame.
+    game.cat_on_glove = want == "glove"
+    if sig ~= M.cat_sig and not (want == "glove" and game.cat_hooked) then
+        if move_cat(want, socket) then M.cat_sig = sig end
+    end
+    M.holding_cat = M.cat_place == "glove"
 end
 
 local function set_shown(want)

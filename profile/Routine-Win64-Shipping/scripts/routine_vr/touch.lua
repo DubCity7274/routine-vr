@@ -16,12 +16,12 @@ local settings = require("routine_vr.settings")
 local hands = require("routine_vr.hands")
 local game = require("routine_vr.game")
 local motion_hands = require("routine_vr.motion_hands")
+local handed = require("routine_vr.handed")
 
 local M = {}
 
 M.BUTTONS = { "Pow", "Wifi", "Nav", "Amp", "Sec", "Deg" }
 
-local HAND_LEFT = 0
 local RETRY_SECONDS = 5.0
 local MARKER_RADIUS = 1.0
 local PRESS_COOLDOWN = 0.4
@@ -48,13 +48,13 @@ local function destroy()
 end
 
 local function signature()
-    return string.format("%.3f %.3f", settings.get("touch_forward"), settings.get("touch_up"))
+    return string.format("%.3f %.3f %s", settings.get("touch_forward"), settings.get("touch_up"), handed.off())
 end
 
 local function place()
     local state = UEVR_UObjectHook.get_or_add_motion_controller_state(M.marker)
     if state == nil then return end
-    state:set_hand(HAND_LEFT)
+    state:set_hand(handed.index(handed.off()))
     state:set_rotation_offset(hands.rotator_to_offset_quat(0, 0, 0))
     state:set_location_offset(hands.location_to_offset(settings.get("touch_forward"), 0, settings.get("touch_up")))
     state:set_permanent(true)
@@ -127,7 +127,8 @@ end
 local function buzz()
     pcall(function()
         local vr = uevr.params.vr
-        vr.trigger_haptic_vibration(0.0, 0.05, 1.0, 0.6, vr.get_left_joystick_source())
+        local src = handed.off() == "left" and vr.get_left_joystick_source() or vr.get_right_joystick_source()
+        vr.trigger_haptic_vibration(0.0, 0.05, 1.0, 0.6, src)
     end)
 end
 
@@ -369,7 +370,7 @@ function M.tick(delta)
     local cat = cat_actor()
     local m = M.marker
     -- The real left index fingertip when motion hands are on, else the dot.
-    local tip = motion_hands.fingertip("left")
+    local tip = motion_hands.fingertip(handed.off())
     local ok = tip ~= nil
     if not ok then ok, tip = pcall(function() return m:K2_GetComponentLocation() end) end
     if cat == nil or not ok or tip == nil then

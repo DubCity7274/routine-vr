@@ -11,13 +11,14 @@ What it adds on top of plain UEVR:
 | 6DoF head + room-scale walking | UEVR `RoomscaleMovement` with collision sweep (your real steps move the pawn, walls stop you) |
 | Aim with your right hand | `AimMethod = Right Controller`, decoupled pitch, left-hand-relative movement |
 | Physical crouch | Duck in real life and the game crouches. Stays in sync with the game's `bIsCrouched` when it can read it |
+| Game menu | Tap Y (sends Start; Y no longer inspects, switchable in the panel) |
 | Recenter | Hold B + Y for 3 s (works in menus), or the panel button: recenters the view, resets the standing origin, recalibrates your height |
 | C.A.T. in your hand | The C.A.T. follows the right controller and moves to the left hand while you inspect it. Other parts can be attached in the panel |
 | Cutscenes and menus | Pre-rendered cutscenes on a flat 2D screen, menus with plain aim; gameplay switches back automatically |
 | Per-headset layouts | `devices/*.lua`: Quest Touch, Index, Pico, WMR, Vive wands |
 | Comfort | Fisheye lens, film grain, sharpen, vignette, motion blur, DoF, chromatic aberration, and lens flares off (switchable in the panel; fisheye/grain/sharpen need the PPV pak mod) |
 | Laser pointer | From the right hand while inspecting the C.A.T. (or always), so you can see what you're clicking |
-| Terminals | Cursor mode: the cursor follows your gaze and the right trigger clicks |
+| Terminals | Point with your right hand (the laser shows the exact line) and pull the trigger |
 
 ## What's in this repo
 
@@ -164,48 +165,39 @@ Attachments are saved by component name in
 UEVR's built-in **UObjectHook** tab does the same job with more knobs. Use it
 if a part needs something the panel lacks.
 
-## Default controls (Quest Touch)
+## Default controls (Quest Touch, right-handed)
 
-Inputs reach the game as a gamepad, so this works whatever Routine binds to
-each pad button. Remap per button under **Controllers → Button remaps**.
-Untick **Use Routine VR button layout** to fall back to UEVR's built-in
-mapping (which differs: left X → B, right B → X).
+Buttons go through UEVR's own controller mapping; the mod adds a few
+controls on top. Left-handed mode (panel, C.A.T. section) swaps the hands:
+the C.A.T., aiming and grip-raise move to the left hand, touch and lean to
+the right, and the left trigger becomes interact.
 
-Buttons use UEVR's built-in mapping by default. The panel's **Use Routine
-VR button layout** checkbox switches to the mod's own layout, where the
-Quest letters match the Xbox prompts.
+| Quest | Does |
+|---|---|
+| Right trigger | Interact / click (point with your right hand) |
+| Right grip | Raise the C.A.T. (hold; toggle or hip-draw in the panel) |
+| Left index finger | Press the C.A.T.'s side buttons by touching them |
+| Left trigger | Focus (the game's D-pad up) |
+| Left grip | Lean |
+| Left X | Crouch |
+| Right B | Interact |
+| Tap Y | Game menu (Start) |
+| Hold B + Y, 3 s | Recenter |
+| Left stick click | Sprint |
+| Left stick | Move toward where you look (raw stick in menus) |
+| Right stick | Smooth turn (left/right only; look up and down with your head) |
+| Both stick clicks | UEVR menu |
 
-| Quest | Gamepad (UEVR default) | Routine action |
-|---|---|---|
-| Right trigger | RT | Interact / fire (raises the C.A.T. once you have it) |
-| Left trigger | LT | Aim |
-| Right A | A | |
-| Right B | X | Interact |
-| Left X | B | Crouch |
-| Left Y | Y | Inspect |
-| Right grip | RB | Lean |
-| Left grip | LB | |
-| Left stick click | LS | Sprint |
-| Right thumbrest + left stick up | D-pad up | Focus (UEVR d-pad shifting) |
-| Left stick | | Move toward where you look (raw stick in menus) |
-| Right stick | | Smooth turn |
-| Both stick clicks | | UEVR menu |
+With motion hands on, the C.A.T. hangs on your hip when it's put away (so
+it's out of the way when crawling); its position has sliders in the
+Motion hands section.
 
 ## Terminals and aiming
 
 Your right hand is the game's camera direction: interaction traces, the
 crosshair's real target, and the flashlight all follow it, not your head.
-The HUD dot floats in front of your face and doesn't show where your hand
-points. To use a computer, point your right controller at it and press the
-interact button.
-
-Routine puts the terminal cursor where the camera points, and with this
-profile that's where your right hand points. Before you have the C.A.T.,
-the right trigger clicks. Afterwards the game uses it to raise the C.A.T.,
-so turn on **terminal mode** (left grip + right stick click, or the panel
-button). In terminal mode the right trigger is sent as Interact (X), and
-the right stick is off so nothing turns you. The panel can make the cursor
-follow your head instead.
+To use a terminal, point your right controller at it (the laser shows the
+exact line) and press the right trigger.
 
 ## Adding a headset
 

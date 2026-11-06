@@ -29,6 +29,7 @@ local input = require("routine_vr.input")
 local settings = require("routine_vr.settings")
 local movement = require("routine_vr.movement")
 local hip = require("routine_vr.hip")
+local handed = require("routine_vr.handed")
 local body = require("routine_vr.body")
 
 local M = {}
@@ -100,13 +101,12 @@ local function enter_mode(mode)
     movement.force_menu = mode ~= "game"
     print("[routine_vr] mode: " .. mode)
 
-    if mode ~= "game" and movement.cursor_mode then
-        movement.set_cursor_mode(false)
-    end
 
     for key, value in pairs(MODE_VALUES[mode]) do
         vr.set_mod_value(key, value)
     end
+    -- Left-handed: aim with the left controller (UEVR AimMethod 3).
+    if mode == "game" and handed.is_left() then vr.set_mod_value("VR_AimMethod", "3") end
     UEVR_UObjectHook.set_disabled(mode ~= "game")
     hidden_pawn = nil
 end
@@ -133,7 +133,29 @@ end
 -- them. The game's arms stay hidden (motion_hands.lua makes the gloves),
 -- and so does the helmet. The ID card is left alone then: the story has
 -- you look down at it.
+-- Anything visible hanging off the game camera: the camera rides on the
+-- right controller, so it would float in your hand. The helmet is one, and
+-- the late-game save showed a helmet the single-instance hide missed, so
+-- every child is hidden except lights (the player's light) and the
+-- camera's widget interaction.
+local function hide_camera_children(pawn)
+    pcall(function()
+        for _, child in ipairs(pawn.CameraComponent.AttachChildren) do
+            if child ~= nil then
+                local cls = ""
+                pcall(function() cls = child:get_class():get_fname():to_string() end)
+                if not cls:find("Light", 1, true) and not cls:find("WidgetInteraction", 1, true) then
+                    pcall(function()
+                        if child:IsVisible() then child:SetVisibility(false, true) end
+                    end)
+                end
+            end
+        end
+    end)
+end
+
 local function hide_clutter(pawn)
+    hide_camera_children(pawn)
     local show_body = settings.get("show_body")
     if show_body then
         local card = first_of("id_card")
@@ -174,14 +196,46 @@ local function update_inspect()
         inspecting = ok and type(intensity) == "number" and intensity > INSPECT_LIGHT_ON
     end
 
-    if inspecting ~= M.inspecting then
-        M.inspecting = inspecting
-        if inspecting then
-            hands.set_override(M.CAT, settings.get("cat_inspect"))
-        else
-            hands.set_override(M.CAT, nil)
-        end
+    M.inspecting = inspecting
+end
+
+local function find_saved(name)
+    for _, a in ipairs(settings.get("attachments")) do
+        if a.name == name then return a end
     end
+    return nil
+end
+
+-- The hooks that follow handedness: the camera (the pointer) and the
+-- C.A.T. on the main hand, and the inspect pose on the off hand (mirrored
+-- for left-handers). Only touched when something changes.
+local applied_hands = nil
+local function update_hand_overrides()
+    local left = handed.is_left()
+    local key = tostring(left) .. "/" .. tostring(M.inspecting)
+    if key == applied_hands then return end
+    applied_hands = key
+
+    local cam = find_saved("CameraComponent")
+    hands.set_override("CameraComponent", (left and cam) and { hand = "left", rot = cam.rot, loc = cam.loc } or nil)
+
+    if M.inspecting then
+        local p = settings.get("cat_inspect")
+        if left then
+            p = { hand = p.hand == "left" and "right" or "left", loc = { p.loc[1], -p.loc[2], p.loc[3] },
+                  rot = { p.rot[1], -p.rot[2], -p.rot[3] } }
+        end
+        hands.set_override(M.CAT, p)
+    else
+        local c = find_saved(M.CAT)
+        hands.set_override(M.CAT, (left and c) and { hand = "left", rot = c.rot, loc = c.loc } or nil)
+    end
+    if M.mode == "game" then vr.set_mod_value("VR_AimMethod", left and "3" or "2") end
+end
+
+-- Panel changes to the inspect pose re-apply it.
+function M.refresh_hands()
+    applied_hands = nil
 end
 
 local OFFSETS = { "VR_CameraForwardOffset", "VR_CameraRightOffset", "VR_CameraUpOffset" }
@@ -194,12 +248,48 @@ end
 
 -- Right grip raises the C.A.T. (hold, or press to toggle), by sending LT.
 -- UEVR maps the grip to RB (lean), so RB is dropped while it's used.
+-- Y opens the game's menu (settings.y_opens_menu): inspect isn't needed now
+-- that the C.A.T.'s buttons are pressed by touch. A short tap sends Start;
+-- a longer hold, or one with B held too (the recenter chord), sends
+-- nothing. Read with UEVR's direct reads on the tick, which work for the
+-- face buttons.
+local Y_TAP = 0.4
+local START_PULSE = 0.12
+local y_held_for = nil     -- seconds Y has been down, nil when up
+local y_chord = false      -- B was held during this Y press
+
+local function update_y_menu(delta)
+    input.start_pulse = math.max(0, input.start_pulse - delta)
+    local on = settings.get("y_opens_menu")
+    input.y_to_menu = on
+    if not on then
+        y_held_for = nil
+        return
+    end
+    local b = input.device and input.device.buttons
+    local y = b ~= nil and input.any_held(b.Y)
+    if y then
+        y_held_for = (y_held_for or 0) + delta
+        if b ~= nil and input.any_held(b.B) then y_chord = true end
+    elseif y_held_for ~= nil then
+        if y_held_for < Y_TAP and not y_chord then input.start_pulse = START_PULSE end
+        y_held_for, y_chord = nil, false
+    end
+end
+
 local function update_grip()
     local mode = settings.get("cat_grip")
+    -- The main hand's grip: what UEVR sends (LB = left grip, RB = right),
+    -- or for the right grip UEVR's direct read, which proved reliable (the
+    -- left one's didn't: it read held while only the right grip was).
+    local left = handed.is_left()
+    local bit = left and XINPUT_GAMEPAD_LEFT_SHOULDER or XINPUT_GAMEPAD_RIGHT_SHOULDER
     local b = input.device and input.device.buttons
     input.right_grip = b ~= nil and input.any_held(b.RB)
+    input.main_grip_bit = bit
     hip.tick()
-    local held = M.mode == "game" and mode ~= "off" and input.right_grip
+    local main_held = (input.xi_in or 0) & bit ~= 0 or (not left and input.right_grip)
+    local held = M.mode == "game" and mode ~= "off" and main_held
     if mode == "toggle" then
         if held and not grip_was then grip_toggled = not grip_toggled end
     else
@@ -220,7 +310,11 @@ local function update_grip()
     input.force_lt = M.grip_raise
     input.clear_rb = M.mode == "game" and mode ~= "off"
     input.block_lt = M.mode == "game" and not settings.get("lt_raises_cat")
-    input.lean_left_grip = M.mode == "game" and settings.get("lean_left_grip")
+    input.focus = input.block_lt and settings.get("lt_focus")
+    input.swap_triggers = M.mode == "game" and handed.is_left()
+    -- Left-handed, the off hand is the right one and its grip is already
+    -- lean (RB) as UEVR maps it.
+    input.lean_left_grip = M.mode == "game" and settings.get("lean_left_grip") and not handed.is_left()
 end
 
 -- With the C.A.T. out, Routine's aim mode filters right-stick turning
@@ -538,6 +632,8 @@ function M.turn_method_name()
 end
 
 function M.tick(delta)
+    if M.mode == "game" then update_hand_overrides() end
+    update_y_menu(delta)
     update_grip()
 
     -- Every frame, so the C.A.T. follows LT/grip without lag.
@@ -593,6 +689,10 @@ function M.reset()
     M.reset_turn_check()
     input.force_lt, input.clear_rb, input.lean_left_grip, input.block_turn = false, false, false, false
     input.block_lt = false
+    input.y_to_menu, input.start_pulse = false, 0.0
+    input.focus, input.swap_triggers = false, false
+    applied_hands = nil
+    y_held_for, y_chord = nil, false
     classes = {}
     hidden_pawn = nil
     timer = CHECK_INTERVAL

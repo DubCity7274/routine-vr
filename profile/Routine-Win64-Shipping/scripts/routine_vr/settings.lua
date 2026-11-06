@@ -11,21 +11,11 @@ M.defaults = {
     device = "auto",
     device_layout = 2,
 
-    -- false = let UEVR's built-in button mapping through untouched. Off by
-    -- default until Routine's controls are better understood (the user asked
-    -- for the stock mapping after terminal mode didn't help).
-    custom_buttons = false,
-
     -- Left stick direction during gameplay: "aim", "left_hand" or "head".
     -- Menus always get the raw stick (see movement.lua).
     move_direction = "head",
-    -- Off = smooth turning by the game. Off in menus and terminal mode regardless.
+    -- Off = smooth turning by the game. Always off in menus.
     snap_turn = false,
-
-    -- Terminal mode: what the cursor follows ("hand" or "head") and which
-    -- gamepad button the right trigger is sent as (Routine's Interact is X).
-    terminal_aim = "hand",
-    terminal_trigger = "X",
 
     -- Physical crouch: duck in real life -> press the game's crouch button.
     -- Measured as a drop from the calibrated standing head height, so it works
@@ -82,6 +72,9 @@ M.defaults = {
     -- right hip to draw it, hold to keep it out) or "off". LT still works.
     cat_grip = "hold",
     lt_raises_cat = false,         -- the grip does it now; LT can be turned back on
+    lt_focus = true,               -- the off-hand trigger sends Focus (D-pad up) instead
+    handedness = "right",          -- "left" swaps the C.A.T./aim hand, touch, grips and triggers
+    y_opens_menu = true,           -- tap Y for the game's menu (Start); Y no longer inspects
     -- The hip holster, from the headset (metres): below, to the right, behind.
     hip_drop = 0.65,
     hip_side = 0.20,
@@ -94,6 +87,11 @@ M.defaults = {
     -- forward/right/up cm), tuned in the panel.
     motion_hands = true,
     show_body = true,              -- the suit's body under you (head hidden), with the ID card
+    -- The put-away C.A.T. on the body's hip (with motion hands): offset from
+    -- the body's pelvis bone, per main hand (UE terms; tuned in the panel).
+    cat_holster = true,
+    cat_holster_right = { rot = { 0, 0, 0 }, loc = { 0, 0, 0 } },
+    cat_holster_left = { rot = { 0, 0, 0 }, loc = { 0, 0, 0 } },
     arm_ik = true,                 -- arms run from the body's shoulders to the hands
     -- Lined up in the headset by the user (Quest 3S).
     hand_right = { rot = { 0.5, 2.1, 157.3 }, loc = { -3.0, 3.0, 0.9 } },
@@ -117,9 +115,6 @@ M.defaults = {
     cat_turn_reverse = false,      -- flip it if pushing right turns you left
     -- Hold right B + left Y this long (s) to recenter the view.
     recenter_hold = 3.0,
-
-    -- Remaps applied on top of the device layout: logical -> gamepad button.
-    remap = {},
 }
 
 local function deep_copy(t)

@@ -107,6 +107,19 @@ end
 
 local cache = {}
 
+-- Every layout is loaded now: UEVR only finds the mod's files while the
+-- script is first loading, so a layout required later (auto-detect, or a
+-- pick in the panel) would silently fall back to Touch.
+for _, id in ipairs(M.order) do
+    local ok, mod = pcall(require, "routine_vr.devices." .. id)
+    if ok then
+        mod.id = mod.id or id
+        cache[id] = mod
+    else
+        print("[routine_vr] couldn't load layout '" .. id .. "': " .. tostring(mod))
+    end
+end
+
 function M.get(id)
     if cache[id] == nil then
         local ok, mod = pcall(require, "routine_vr.devices." .. id)

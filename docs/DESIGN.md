@@ -507,6 +507,17 @@ uevrlib is the basis here, not a dependency to copy wholesale. Its modules
 are large and generic, so port the pieces with tests, the way game.lua and
 effects.lua were.
 
+## UEVR quirk: require only works while the script loads
+
+UEVR only finds the mod's files during the script's first run; a
+require from a callback fails ("module not found", searching the game's
+Binaries folder). A late require("routine_vr.version") in ui.draw blanked
+the whole panel in 0.1.0-beta.1, and the controller layouts were loaded
+on demand too (auto-detect or a manual pick would silently fall back to
+Touch). Everything is now required at load, devices/init.lua preloads
+every layout, and the tests make any later require of a routine_vr module
+fail.
+
 ## Headset support and releases (beta prep)
 
 - devices.read_system_name() reads UEVR's log.txt (via io under %APPDATA%,
@@ -524,4 +535,39 @@ effects.lua were.
 - version.lua holds the version (panel title, release names).
   tools/make-release.sh builds dist/routine-vr-<v>.zip (git archive of
   HEAD) and dist/routine-vr-<v>-profile.zip (just the profile folder).
+
+## Late-game save findings
+
+- The C.A.T. screen renders in both eyes early in the game but only the
+  left eye in the end-game save (Native Stereo). Synchronized Sequential
+  shows it in both eyes but breaks the mod's hands (stuck at the crotch)
+  and shows the helmet, so it isn't an option. Next to try: UEVR's
+  VR_NativeStereoFix: confirmed, it puts the screen in both eyes; now on
+  in the profile's config.txt (with Same Pass).
+- A helmet showed in the hand again in that save: hide_camera_children()
+  now hides every visible child of the CameraComponent except lights and
+  the WidgetInteraction, every check.
+- Y opens the game's menu (y_opens_menu): Y is kept from the game and a
+  tap (< 0.4 s, B not held) sends Start for 0.12 s; the B + Y recenter
+  chord and long holds send nothing. Read with is_held on the tick.
+
+## Cleanup, left-handed mode, Focus, hip holster
+
+- Removed the custom button layout (custom_buttons, remaps) and terminal
+  mode (it depended on the layout's RT->X swap). UEVR's mapping passes
+  through; injected buttons (physical crouch) are now OR'd in
+  apply_overrides.
+- handed.lua: settings.handedness. Left-handed: AimMethod 3, the camera
+  and C.A.T. hooks on the left hand (overrides), inspect mirrored to the
+  right hand, the left grip (LB bit) raises the C.A.T., the right grip is
+  lean natively, touch/fingertip on the right hand, triggers swapped (left
+  index = RT), hip holster on the left, the C.A.T. on the left glove at
+  the game socket with _R_ -> _L_ (the left hand closes its fingers since
+  the game only animates a right-hand grip).
+- lt_focus: the off-hand trigger sends D-pad up (Focus) when it isn't
+  raising the C.A.T.
+- C.A.T. place state (motion_hands): glove while raised, holster (snapped
+  to the body's Bone_Pelvis plus cat_holster_<hand> offset) while put away
+  with motion hands on, else home. Each move first restores the C.A.T.'s
+  original relative offset (saved with its home), so offsets don't leak.
 

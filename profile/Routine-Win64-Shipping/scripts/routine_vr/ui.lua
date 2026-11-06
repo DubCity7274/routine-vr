@@ -13,6 +13,9 @@ local probe = require("routine_vr.probe")
 local hip = require("routine_vr.hip")
 local body = require("routine_vr.body")
 local motion_hands = require("routine_vr.motion_hands")
+-- Everything is required at load: UEVR only finds the mod's files while
+-- the script is first running (a require from on_frame fails).
+local VERSION = require("routine_vr.version")
 local touch = require("routine_vr.touch")
 
 local M = {}
@@ -43,7 +46,6 @@ local function slider_setting(label, key, lo, hi)
 end
 
 local function draw_controllers()
-    checkbox_setting("Use Routine VR button layout (off = UEVR default buttons)", "custom_buttons")
 
     local changed_move, move_idx = imgui.combo("Left stick moves toward",
         index_of(movement.CHOICES, settings.get("move_direction")), movement.LABELS)
@@ -53,7 +55,6 @@ local function draw_controllers()
     checkbox_setting("Snap turn on right stick", "snap_turn")
     checkbox_setting("Right stick up/down does nothing in gameplay (look with your head)", "lock_stick_pitch")
     imgui.text("Snap turn right now: " .. (movement.snap_turn_active() and "on" or "off"))
-    imgui.text("Sending to game: " .. (input.last_sent ~= "" and input.last_sent or "(nothing)"))
     local d = input.diag
     imgui.text(string.format("Input check: %d polls, UEVR %s", d.polls, d.gate))
     imgui.text(string.format("  RB (lean) from UEVR: %s, sent: %s | LT sent: %d | stick X sent: %d",
@@ -74,22 +75,6 @@ local function draw_controllers()
     imgui.text("Using: " .. input.device.name .. (input.auto_device and
         (" (headset: " .. tostring(input.detected_name or "not known yet") .. ")") or " (chosen by hand)"))
     imgui.text("Runtime: " .. (devices.uses_openvr() and "OpenVR (per-controller pitch fix on)" or "OpenXR"))
-
-    if imgui.tree_node("Button remaps") then
-        imgui.text("Send a layout button to the game as a different gamepad button.")
-        local remap = settings.get("remap")
-        for _, src in ipairs(REMAP_SOURCES) do
-            local targets = { "(same)" }
-            for _, b in ipairs(input.BUTTON_NAMES) do targets[#targets + 1] = b end
-            local current = remap[src] and index_of(targets, remap[src]) or 1
-            local c, i = imgui.combo(src .. "##remap", current, targets)
-            if c then
-                remap[src] = (i ~= 1) and targets[i] or nil
-                settings.save()
-            end
-        end
-        imgui.tree_pop()
-    end
 end
 
 local function draw_roomscale()
@@ -144,7 +129,7 @@ local function draw_cat_inspect()
         a.hand = hand
         local r = settings.INSPECT_POSE[hand]
         a.rot, a.loc = { r[1], r[2], r[3] }, { 0, 0, 0 }
-        settings.save(); hands.mark_dirty()
+        settings.save(); hands.mark_dirty(); game.refresh_hands()
     end
     if imgui.small_button("Left hand") then set_hand("left") end
     imgui.same_line()
@@ -152,6 +137,7 @@ local function draw_cat_inspect()
     imgui.same_line()
     if imgui.small_button("Reset pose") then set_hand(a.hand) end
     draw_offset_sliders({ name = "cat_inspect" }, a)
+    game.refresh_hands() -- left-handers get a mirrored copy of this pose
     imgui.pop_id()
     if imgui.separator then imgui.separator() end
 end
@@ -180,7 +166,13 @@ local function draw_motion_hands()
     end
     draw_offset_sliders({ name = "hand_left" }, l)
     imgui.text("With hands on, the C.A.T.'s buttons are pressed with your left index finger.")
-    imgui.text("C.A.T.: " .. (motion_hands.holding_cat and ("in the right glove (socket " .. tostring(motion_hands.cat_socket) .. ")") or "not in the glove"))
+    imgui.text("C.A.T.: " .. ({ glove = "in your hand", holster = "on your hip", home = "where the game keeps it" })[motion_hands.cat_place or "home"])
+    checkbox_setting("Put-away C.A.T. hangs on your hip (keeps it out of your way when crawling)", "cat_holster")
+    if settings.get("cat_holster") then
+        local side = settings.get("handedness") == "left" and "left" or "right"
+        imgui.text("Hip position (put the C.A.T. away to see it):")
+        draw_offset_sliders({ name = "cat_holster_" .. side }, settings.get("cat_holster_" .. side))
+    end
     imgui.text("Fingers: index follows the trigger, the rest the grip, thumb on buttons/thumbrest.")
     imgui.text("If they bend the wrong way, drag the preview and pick the axis that curls them into a fist:")
     slider_setting("Curl preview (drag, then set back to 0)", "finger_curl_preview", 0, 1)
@@ -258,20 +250,6 @@ local function draw_laser()
     slider_setting("Laser start up (cm)", "laser_up", -30, 30)
 end
 
-local TERMINAL_AIMS = { "hand", "head" }
-local TERMINAL_AIM_LABELS = { "Where your right hand points", "Where you look" }
-
-local function draw_terminals()
-    if imgui.button(movement.cursor_mode and "Terminal mode: ON (click to leave)" or "Terminal mode: off (click for terminals)") then
-        movement.set_cursor_mode(not movement.cursor_mode)
-    end
-    imgui.text("Right trigger clicks (sent as " .. tostring(settings.get("terminal_trigger")) .. ") instead of raising the C.A.T.")
-    imgui.text("Right stick does nothing. Shortcut: hold left grip and click the right stick.")
-    local changed, idx = imgui.combo("Cursor follows", index_of(TERMINAL_AIMS, settings.get("terminal_aim")), TERMINAL_AIM_LABELS)
-    if changed then settings.set("terminal_aim", TERMINAL_AIMS[idx]) end
-    combo_setting("Right trigger sends", "terminal_trigger", input.BUTTON_NAMES)
-end
-
 local function draw_effects()
     for _, g in ipairs(effects.GROUPS) do
         local changed, v = imgui.checkbox(g.label, settings.get(g.key))
@@ -296,8 +274,13 @@ local GRIP_MODES = { { "hold", "Hold grip" }, { "toggle", "Press grip to toggle"
     { "hip", "Grip at right hip (holster)" }, { "off", "Off" } }
 
 local function draw_cat()
+    local changed_h, left = imgui.checkbox("Left-handed (C.A.T. and aiming on the left hand)", settings.get("handedness") == "left")
+    if changed_h then
+        settings.set("handedness", left and "left" or "right")
+        game.refresh_hands()
+    end
     local mode = settings.get("cat_grip")
-    imgui.text("Right grip raises the C.A.T. (LT still works). Now: " .. mode)
+    imgui.text("Your main hand's grip raises the C.A.T. Now: " .. mode)
     for i, m in ipairs(GRIP_MODES) do
         if i > 1 then imgui.same_line() end
         if imgui.small_button(m[2]) then settings.set("cat_grip", m[1]) end
@@ -312,7 +295,9 @@ local function draw_cat()
         slider_setting("Holster size (m)", "hip_radius", 0.1, 0.4)
     end
     checkbox_setting("Left trigger also raises the C.A.T.", "lt_raises_cat")
-    checkbox_setting("Lean with the left grip (Routine doesn't use LB)", "lean_left_grip")
+    checkbox_setting("Off-hand trigger sends Focus (the game's D-pad up)", "lt_focus")
+    checkbox_setting("Tap Y to open the game's menu (off: Y inspects the C.A.T.)", "y_opens_menu")
+    checkbox_setting("Lean with the left grip (right-handed; left-handers lean with the right grip)", "lean_left_grip")
     imgui.text("Lean: " .. (settings.get("lean_left_grip") and "left grip" or
         (settings.get("cat_grip") == "off" and "right grip" or "none - turn one of these on")))
     checkbox_setting("Normal-speed turning with the C.A.T. out (not the slow aim turn)", "stop_cat_aim_turn")
@@ -345,7 +330,7 @@ local function section(title, draw)
 end
 
 function M.draw()
-    imgui.text("Routine VR " .. require("routine_vr.version"))
+    imgui.text("Routine VR " .. VERSION)
     draw_status()
 
     section("Laser", draw_laser)
@@ -354,7 +339,6 @@ function M.draw()
     section("C.A.T. recorder", draw_probe)
     section("Motion hands", draw_motion_hands)
     section("Body (motion hands)", draw_body)
-    section("Terminals", draw_terminals)
     section("Controllers", draw_controllers)
     section("Room-scale", draw_roomscale)
     section("Comfort", draw_effects)

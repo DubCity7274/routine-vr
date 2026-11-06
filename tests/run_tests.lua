@@ -168,6 +168,17 @@ end
 local real_print = print
 print = function() end
 dofile(root .. "/profile/Routine-Win64-Shipping/scripts/routine_vr.lua")
+
+-- Like UEVR: the mod's own modules can only be required while the script
+-- is first loading. A require of one not loaded by now fails (in the game
+-- it broke the whole panel).
+local real_require = require
+require = function(name)
+    if type(name) == "string" and name:find("^routine_vr") and package.loaded[name] == nil then
+        error("module '" .. name .. "' not found (required after load; UEVR can't find it then)")
+    end
+    return real_require(name)
+end
 print = real_print
 
 local settings = require("routine_vr.settings")
@@ -182,70 +193,34 @@ end
 check(fake.mod_values.VR_ControllerPitchOffset == "0.000000", "quest layout pushes its UEVR overrides")
 
 local d = settings.defaults
-check(d.snap_turn == false and d.move_direction == "head" and d.physical_crouch == false
-    and d.terminal_aim == "hand" and d.terminal_trigger == "X",
-    "defaults: smooth turn, head movement, physical crouch off, terminal mode on the hand with RT as X")
+check(d.snap_turn == false and d.move_direction == "head" and d.physical_crouch == false,
+    "defaults: smooth turn, head movement, physical crouch off")
 
-check(d.custom_buttons == false, "defaults: UEVR's built-in button mapping")
 check(d.lt_raises_cat == false and d.cat_grip == "hold", "defaults: the grip raises the C.A.T., LT doesn't")
 check(d.device == "auto", "defaults: controller layout auto-detected")
 
 -- The behaviour tests below exercise the non-default options.
-settings.data.custom_buttons = true
 settings.data.lt_raises_cat = true -- many tests raise the C.A.T. with LT (off by default)
 settings.data.cat_grip = "off"   -- layout tests expect the grips as LB/RB; grip-raise and
 settings.data.lean_left_grip = false -- left-grip lean have their own tests
+settings.data.y_opens_menu = false   -- the layout tests expect Y to reach the game
 settings.data.move_direction = "left_hand"
 settings.data.snap_turn = true
 settings.data.physical_crouch = true
-settings.data.terminal_aim = "head"
 
 ---------------------------------------------------------------------------
--- Quest button mapping
+-- UEVR's own button mapping passes through (only the mod's edits change it)
 ---------------------------------------------------------------------------
 
 tick(0.1)
 release_all()
-hold("AButtonRight", "right", true)
-hold("Trigger", "left", true)
-hold("Grip", "right", true)
-local gp = poll(XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_X)
-check(has(gp, XINPUT_GAMEPAD_A), "right A -> A")
-check(gp.bLeftTrigger == 255 and gp.bRightTrigger == 0, "left trigger -> LT only")
-check(has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER), "right grip -> RB")
-check(has(gp, XINPUT_GAMEPAD_START), "UEVR-owned START preserved")
-check(not has(gp, XINPUT_GAMEPAD_X), "stale UEVR face button cleared when not held")
-
-release_all()
-hold("AButtonLeft", "left", true)
-hold("BButtonLeft", "left", true)
-gp = poll()
-check(has(gp, XINPUT_GAMEPAD_X) and has(gp, XINPUT_GAMEPAD_Y), "left X/Y buttons -> X/Y")
-check(not has(gp, XINPUT_GAMEPAD_A), "left X does not press A")
-
-release_all()
-hold("JoystickClick", "left", true)
-hold("JoystickClick", "right", true)
-gp = poll()
-check(not has(gp, XINPUT_GAMEPAD_LEFT_THUMB) and not has(gp, XINPUT_GAMEPAD_RIGHT_THUMB),
-    "L3+R3 (UEVR menu chord) kept from the game")
-
-release_all()
-hold("AButtonRight", "right", true)
-fake.drawing_ui = true
+local gp = poll(XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_RIGHT_SHOULDER)
+check(gp.wButtons == XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_RIGHT_SHOULDER,
+    "UEVR's mapping reaches the game untouched")
+input.inject("B")
 gp = poll(0)
-check(gp.wButtons == 0, "no input added while UEVR overlay is open")
-fake.drawing_ui = false
-
-fake.using_controllers = false
-gp = poll(XINPUT_GAMEPAD_B)
-check(gp.wButtons == XINPUT_GAMEPAD_B, "real gamepad passes through untouched")
-fake.using_controllers = true
-
-settings.data.custom_buttons = false
-gp = poll(XINPUT_GAMEPAD_B)
-check(gp.wButtons == XINPUT_GAMEPAD_B, "layout off: UEVR's mapping passes through untouched")
-settings.data.custom_buttons = true
+check(has(gp, XINPUT_GAMEPAD_B), "a button pressed by the mod for a frame (inject) reaches the game")
+input.begin_frame()
 
 ---------------------------------------------------------------------------
 -- Movement orientation: raw stick in menus, chosen direction in gameplay
@@ -274,7 +249,7 @@ fake.pawn, fake.pc = nil, nil
 tick(0.6)
 
 ---------------------------------------------------------------------------
--- Cursor mode: snap turn off in menus, on the chord, and from the panel
+-- Snap turn: off in menus, on in gameplay when the setting is on
 ---------------------------------------------------------------------------
 
 release_all()
@@ -284,71 +259,12 @@ fake.pawn = { get_address = function() return 0x900 end, K2_GetComponentsByClass
 fake.pc = { bShowMouseCursor = false }
 tick(0.6)
 check(fake.mod_values.VR_SnapTurn == "true", "gameplay: snap turn on")
-
-hold("Grip", "left", true)
-hold("JoystickClick", "right", true)
-tick(0.05)
-gp = poll()
-check(not has(gp, XINPUT_GAMEPAD_RIGHT_THUMB), "chord's stick click hidden from the game")
-tick(0.6)
-check(movement.cursor_mode and fake.mod_values.VR_SnapTurn == "false", "left grip + RS click: cursor mode on")
-check(fake.mod_values.VR_AimMethod == "1", "cursor mode aims with the head")
-local st = { Gamepad = { wButtons = 0, bLeftTrigger = 0, bRightTrigger = 0,
-                         sThumbLX = 0, sThumbLY = 0, sThumbRX = 20000, sThumbRY = -15000 } }
-callbacks.on_xinput_get_state(0, 0, st)
-check(st.Gamepad.sThumbRX == 0 and st.Gamepad.sThumbRY == 0, "cursor mode blocks the right stick")
-hold("Trigger", "right", true)
-tick(0.02)
-gp = poll()
-check(has(gp, XINPUT_GAMEPAD_X) and gp.bRightTrigger == 0, "terminal mode: right trigger sent as X, not RT")
-hold("Trigger", "right", false)
-tick(0.5)
-check(movement.cursor_mode, "chord doesn't re-toggle while held")
-release_all()
-tick(0.1)
-hold("Grip", "left", true)
-hold("JoystickClick", "right", true)
-tick(0.6)
-check(not movement.cursor_mode and fake.mod_values.VR_SnapTurn == "true", "chord again: cursor mode off")
-check(fake.mod_values.VR_AimMethod == "2", "leaving cursor mode restores the aim method")
-release_all()
-
-hold("Trigger", "right", true)
-tick(0.02)
-gp = poll()
-check(gp.bRightTrigger == 255 and not has(gp, XINPUT_GAMEPAD_X), "outside terminal mode RT is RT")
-release_all()
-
-settings.data.terminal_aim = "hand"
-fake.mod_values.VR_AimMethod = "2"
-movement.set_cursor_mode(true)
-check(fake.mod_values.VR_AimMethod == "2", "terminal mode on the hand leaves aim alone")
-movement.set_cursor_mode(false)
-settings.data.terminal_aim = "head"
-
-hold("JoystickClick", "right", true)
-tick(0.05)
-gp = poll()
-check(has(gp, XINPUT_GAMEPAD_RIGHT_THUMB), "RS alone still reaches the game")
-release_all()
-
 settings.data.snap_turn = false
 tick(0.6)
 check(fake.mod_values.VR_SnapTurn == "false", "snap turn setting off respected")
 settings.data.snap_turn = true
 fake.pawn, fake.pc = nil, nil
 tick(0.6)
-
----------------------------------------------------------------------------
--- Remap
----------------------------------------------------------------------------
-
-release_all()
-settings.get("remap").RB = "Y"
-hold("Grip", "right", true)
-gp = poll()
-check(has(gp, XINPUT_GAMEPAD_Y) and not has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER), "remap RB -> Y")
-settings.get("remap").RB = nil
 
 ---------------------------------------------------------------------------
 -- Physical crouch (toggle, edge mode: pawn has no bIsCrouched)
@@ -444,9 +360,9 @@ local before = fake.recentered
 hold("Grip", "left", true)
 hold("Grip", "right", true)
 tick(1.5)
-gp = poll()
+gp = poll(XINPUT_GAMEPAD_LEFT_SHOULDER | XINPUT_GAMEPAD_RIGHT_SHOULDER)
 check(has(gp, XINPUT_GAMEPAD_LEFT_SHOULDER) and has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER),
-    "both grips reach the game as LB/RB")
+    "both grips reach the game as LB/RB (grip features off)")
 check(fake.recentered == before, "holding both grips doesn't recenter")
 roomscale.recenter()
 check(fake.recentered == before + 1 and fake.standing_origin ~= nil, "panel recenter resets view and origin")
@@ -532,6 +448,21 @@ check(game.mode == "game" and fake.mod_values.VR_AimMethod == "2" and fake.mod_v
     "gameplay mode: right-hand aim, 3D")
 check(fake.uobjecthook_disabled == false, "attachments on in gameplay")
 check(hidden.child, "body-mesh attachments hidden")
+-- Anything visible under the camera floats in your hand: hidden, lights kept.
+local function cam_child(cls)
+    local c = { vis = true }
+    function c:get_class() return { get_fname = function() return { to_string = function() return cls end } end } end
+    function c:IsVisible() return self.vis end
+    function c:SetVisibility(v) self.vis = v end
+    return c
+end
+local helmet2, light2 = cam_child("SkeletalMeshComponent"), cam_child("Routine_PlayerSpecularComponent_C")
+light2.get_class = function() return { get_fname = function() return { to_string = function() return "PointLightComponent" end } end } end
+cam.AttachChildren = { helmet2, light2 }
+game_pawn.CameraComponent = cam
+tick(0.6)
+check(helmet2.vis == false and light2.vis == true, "late-game helmet under the camera hidden; the player's light kept")
+cam.AttachChildren = nil
 -- With show_body, the suit's body mesh stays (head hidden), the rest goes.
 local body_child = { SkeletalMesh = { get_full_name = function() return "SkeletalMesh /Game/Art/3D/Character/Player/Default/Model/SK_Player_Default_Body.SK_Player_Default_Body" end } }
 function body_child:SetVisibility(v) self.visible = v end
@@ -796,7 +727,7 @@ gp = poll(XINPUT_GAMEPAD_LEFT_SHOULDER)
 check(has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER) and not has(gp, XINPUT_GAMEPAD_LEFT_SHOULDER), "left grip leans (RB, not LB) in gameplay")
 hold("Grip", "left", false)
 tick(0.1)
-gp = poll(XINPUT_GAMEPAD_LEFT_SHOULDER)
+gp = poll(0)
 check(not has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER), "left grip released: no lean")
 settings.data.lean_left_grip = false
 settings.data.cat_grip = "hold"
@@ -875,6 +806,26 @@ local nl = fake.mc_states[beam].loc
 check(math.abs(nl.y - 18.3) < 1e-4 and math.abs(nl.z - (14.4 - 50)) < 1e-4, "laser start nudge (calibrated default)")
 settings.data.laser_forward, settings.data.laser_up = 0, 0
 settings.data.laser = "inspect"
+
+-- Tap Y for the game's menu: Start for a moment, Y kept from the game.
+settings.data.y_opens_menu = true
+hold("BButtonLeft", "left", true)
+tick(0.1)
+local yg = poll(XINPUT_GAMEPAD_Y)
+check(not has(yg, XINPUT_GAMEPAD_Y), "Y doesn't reach the game (no inspect)")
+hold("BButtonLeft", "left", false)
+tick(1 / 72)
+yg = poll()
+check(has(yg, XINPUT_GAMEPAD_START), "Y tap: Start sent (game menu)")
+tick(0.3)
+check(not has(poll(), XINPUT_GAMEPAD_START), "...only for a moment")
+hold("BButtonLeft", "left", true); tick(0.8); hold("BButtonLeft", "left", false); tick(1 / 72)
+check(not has(poll(), XINPUT_GAMEPAD_START), "Y held long: no menu")
+hold("BButtonLeft", "left", true); hold("BButtonRight", "right", true); tick(0.2)
+hold("BButtonLeft", "left", false); hold("BButtonRight", "right", false); tick(1 / 72)
+check(not has(poll(), XINPUT_GAMEPAD_START), "B + Y (recenter chord): no menu")
+tick(0.5)
+settings.data.y_opens_menu = false
 
 -- Hold B + Y to recenter (read from the buttons UEVR sends the game)
 local before = fake.recentered
@@ -1070,14 +1021,11 @@ release_all()
 tick(0.02)
 hold("JoystickClick", "right", true)
 fake.axis.right = { 0, -0.9 }
-gp = poll()
-check(has(gp, XINPUT_GAMEPAD_A) and not has(gp, XINPUT_GAMEPAD_Y), "vive right pad down-click -> A")
+check(input.is_held("pad_down_r") and not input.is_held("pad_up_r"), "vive right pad down-click reads as pad down")
 fake.axis.right = { 0.9, 0.1 }
-gp = poll()
-check(has(gp, XINPUT_GAMEPAD_B), "vive right pad right-click -> B")
+check(input.is_held("pad_right_r"), "vive right pad right-click reads as pad right")
 fake.axis.right = { 0.1, 0.1 }
-gp = poll()
-check(gp.wButtons & 0xF000 == 0, "vive pad centre click presses no face button")
+check(not input.is_held("pad_down_r") and not input.is_held("pad_right_r"), "vive pad centre click is no quadrant")
 input.set_device("quest_touch")
 release_all()
 
@@ -1305,10 +1253,14 @@ poll(0)
 
 -- The C.A.T. rides in the right glove at its game socket while it's out.
 local attached_to = nil
+StructObject = StructObject or { new = function() return {} end }
 local cat_root2 = { AttachParent = arms_comp, AttachSocketName = "Bone_Palm_R_Tool",
                     get_address = function() return 0xCA7 end,
-                    K2_AttachToComponent = function(self, parent, socket, a, b, c, d) attached_to = { parent, socket } end,
-                    RelativeLocation = { X = 0, Y = 0, Z = 0 }, RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 } }
+                    K2_AttachToComponent = function(self, parent, socket, a, b, c, d) attached_to = { parent, socket, a } end,
+                    K2_GetComponentLocation = function() return { X = 0, Y = 0, Z = 0 } end,
+                    K2_GetComponentRotation = function() return { Pitch = 0, Yaw = 0, Roll = 0 } end,
+                    K2_SetRelativeLocationAndRotation = function(self, l, r) self.rel = { l.X, l.Y, l.Z, r.Yaw } end,
+                    RelativeLocation = { X = 1, Y = 2, Z = 3 }, RelativeRotation = { Pitch = 0, Yaw = 5, Roll = 0 } }
 fake.objects["Class /Script/Routine.RoutineGameCAT"] = { Pointlight_InspectCAT = { Intensity = 0 }, RootComponent = cat_root2 }
 require("routine_vr.input").left_trigger = 255
 tick(0.2)
@@ -1318,6 +1270,7 @@ check(fake.mc_states[cat_root2] == nil, "...instead of hooked to the controller"
 require("routine_vr.input").left_trigger = 0
 tick(0.2)
 check(attached_to[1] == arms_comp and not mh.holding_cat, "put away: back on the game's arms so the game can lower it")
+check(cat_root2.rel and cat_root2.rel[1] == 1 and cat_root2.rel[4] == 5, "...with its own relative offset back")
 
 -- The game's live pose (here: every joint turned 40 deg) only shapes the
 -- right hand's grip on the C.A.T., never the thumb or the left hand.
@@ -1415,6 +1368,40 @@ for _, b in ipairs(bone_sets) do
     if b[1] == "loc" and b[2] == "Bone_Arm_R_Forearm_01" then fo = { x = b[3], y = b[5], z = b[6] } end
 end
 check(dist(fo, up) > 10.5, "out of reach: the upper arm lengthens to reach")
+
+-- Put away with motion hands: the C.A.T. hangs on the body's hip.
+local att3 = nil
+local cat_root3 = { AttachParent = arms_comp, AttachSocketName = "Bone_Palm_R_Tool",
+                    get_address = function() return 0xCA8 end,
+                    K2_AttachToComponent = function(self, parent, socket, a) att3 = { parent, socket, a } end,
+                    K2_GetComponentLocation = function() return { X = 0, Y = 0, Z = 0 } end,
+                    K2_GetComponentRotation = function() return { Pitch = 0, Yaw = 0, Roll = 0 } end,
+                    K2_SetRelativeLocationAndRotation = function(self, l, r) self.rel = { l.X, l.Y, l.Z } end,
+                    RelativeLocation = { X = 0, Y = 0, Z = 0 }, RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 } }
+fake.objects["Class /Script/Routine.RoutineGameCAT"] = { Pointlight_InspectCAT = { Intensity = 0 }, RootComponent = cat_root3 }
+settings.data.cat_holster = true
+settings.data.cat_holster_right = { rot = { 0, 0, 0 }, loc = { 4, 5, 6 } }
+require("routine_vr.input").left_trigger = 0
+tick(0.2)
+check(att3 and att3[1] == body_comp and att3[2] == "Bone_Pelvis" and att3[3] == 2 and cat_root3.rel[2] == 5
+    and mh.cat_place == "holster", "put away: the C.A.T. snaps to the body's pelvis at the hip offset")
+require("routine_vr.input").left_trigger = 255
+tick(0.2)
+check(att3[1] == mh.mesh and att3[2] == "Bone_Palm_R_Tool" and mh.cat_place == "glove", "raised: from the hip into the glove")
+
+-- Left-handed: everything to the other hands.
+settings.data.handedness = "left"
+tick(0.2)
+check(att3[1] == mh.mesh and att3[2] == "Bone_Palm_L_Tool", "left-handed: the C.A.T. moves to the left glove's matching socket")
+check(fake.mod_values.VR_AimMethod == "3", "left-handed: aim with the left controller")
+local lt_state = { Gamepad = { wButtons = 0, bLeftTrigger = 200, bRightTrigger = 0, sThumbLX = 0, sThumbLY = 0, sThumbRX = 0, sThumbRY = 0 } }
+callbacks.on_xinput_get_state(0, 0, lt_state)
+check(lt_state.Gamepad.bRightTrigger == 200, "left-handed: the left index trigger interacts (sent as RT)")
+settings.data.handedness = "right"
+require("routine_vr.input").left_trigger = 0
+tick(0.2)
+check(fake.mod_values.VR_AimMethod == "2", "back to right-handed: right controller aim")
+fake.objects = {}
 settings.data.motion_hands = false
 tick(0.1)
 fake.pawn = nil
@@ -1424,9 +1411,9 @@ fake.pawn = nil
 -- Settings file with wrong-typed values (empty tables saved as null)
 ---------------------------------------------------------------------------
 
-saved_json["routine_vr.json"] = { remap = "null", attachments = 0, snap_turn = false }
+saved_json["routine_vr.json"] = { hand_right = "null", attachments = 0, snap_turn = false }
 settings.load()
-check(type(settings.get("remap")) == "table" and type(settings.get("attachments")) == "table",
+check(type(settings.get("hand_right")) == "table" and type(settings.get("attachments")) == "table",
     "wrong-typed saved values fall back to defaults")
 check(settings.get("snap_turn") == false, "correctly typed saved values kept")
 

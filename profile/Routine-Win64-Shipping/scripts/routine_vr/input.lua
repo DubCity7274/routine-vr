@@ -1,11 +1,11 @@
--- Turns VR controller state into the XInput gamepad state Routine reads.
+-- Reads the VR controllers and edits the XInput gamepad state Routine reads.
 --
--- Ownership split with UEVR:
---   * face buttons, bumpers, stick clicks, triggers: rebuilt here from the
---     active device layout, so every headset gets an explicit mapping.
---   * thumbsticks, START, BACK, d-pad: left as UEVR produced them, because
---     UEVR's snap turn, d-pad shifting and menu combos live there.
--- Other modules can press buttons (inject) or hide them (suppress) for a frame.
+-- UEVR maps the controllers to a gamepad itself (its default bindings work
+-- for every headset); this module only edits that state afterwards: the
+-- grip-raised C.A.T., lean on the left grip, Y for the menu, LT for Focus,
+-- the C.A.T.-out turn, and buttons other modules press for a frame
+-- (inject, e.g. physical crouch). The controller layouts (devices/) say
+-- which physical inputs the mod's own reads use.
 
 local devices = require("routine_vr.devices")
 local settings = require("routine_vr.settings")
@@ -31,23 +31,16 @@ M.BITS = {
     Y = XINPUT_GAMEPAD_Y,
 }
 
--- Names offered in the UI for crouch/remap targets.
+-- Names offered in the UI for the crouch button.
 M.BUTTON_NAMES = { "A", "B", "X", "Y", "LB", "RB", "LS", "RS", "LT", "RT",
                    "START", "BACK", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT" }
-
-local UEVR_OWNED = M.BITS.START | M.BITS.BACK
-    | M.BITS.DPAD_UP | M.BITS.DPAD_DOWN | M.BITS.DPAD_LEFT | M.BITS.DPAD_RIGHT
 
 local handles = {}
 local sources = {}
 local injected = {}     -- button name -> true, cleared each frame
-local suppressed = {}   -- physical input name -> true, cleared each frame
 
 M.device = nil
-M.block_right_stick = false   -- set by terminal mode (movement.lua)
 M.block_stick_pitch = false   -- gameplay: right stick up/down off (game.lua)
-M.trigger_sends = nil         -- terminal mode: right trigger sent as this button
-M.last_sent = ""              -- buttons sent on the last poll, for the panel
 M.left_trigger = 0            -- what the player is pulling on LT (0-255), before force_lt
 M.right_trigger = 0           -- and on RT
 M.force_lt = false            -- grip raises the C.A.T.: send LT fully pulled (game.lua)
@@ -56,6 +49,10 @@ M.clear_rb = false            -- ...and drop the RB (lean) that UEVR maps the ri
 M.lean_left_grip = false      -- gameplay: left grip sends RB (lean) instead of LB (game.lua)
 M.block_turn = false          -- C.A.T. out: right stick X hidden from the game (game.lua turns instead)
 M.inject_rx = nil             -- C.A.T. turn handover: right stick X pushed for the player (game.lua)
+M.y_to_menu = false           -- Y is kept from the game (it opens the menu instead; game.lua)
+M.start_pulse = 0.0           -- seconds left of a Start press sent for a Y tap
+M.swap_triggers = false       -- left-handed: left index interacts (RT), right trigger is the off one
+M.focus = false               -- the off-hand trigger sends Focus (D-pad up; game.lua)
 M.xi_in = 0                   -- buttons UEVR sent in the last poll, before any edits
 M.right_grip = false          -- right grip as read on the engine tick (game.lua), for raising the C.A.T.
 M.diag = { polls = 0, gate = "?", rb_in = false, rb_out = false, lt_out = 0, rx_out = 0,
@@ -131,8 +128,6 @@ end
 
 -- Is a physical input (by name from devices.inputs) held right now?
 function M.is_held(name)
-    if suppressed[name] then return false end
-
     local def = devices.inputs[name]
     if def == nil then return false end
 
@@ -160,14 +155,13 @@ function M.any_held(list)
     return false
 end
 
--- Injections and suppressions last from one engine tick to the next, so a
--- game that polls XInput several times per frame sees them every time.
+-- Injections last from one engine tick to the next, so a game that polls
+-- XInput several times per frame sees them every time.
 function M.begin_frame()
-    injected, suppressed = {}, {}
+    injected = {}
 end
 
 function M.inject(button) injected[button] = true end
-function M.suppress(input) suppressed[input] = true end
 
 function M.right_stick_x()
     vr.get_joystick_axis(source("right"), axis)
@@ -189,14 +183,29 @@ local function apply_overrides(state)
     M.diag.rgrip, M.diag.clear = right_grip, M.clear_rb
     M.diag.wb_in, M.diag.wb_clear = state.Gamepad.wButtons, -1
 
+    -- Left-handed: the left index is the interact trigger (RT) and the
+    -- right trigger becomes the off-hand one.
+    local off_trigger = M.left_trigger
+    if M.swap_triggers then
+        state.Gamepad.bRightTrigger = M.left_trigger
+        state.Gamepad.bLeftTrigger = M.right_trigger
+        off_trigger = M.right_trigger
+    end
+    -- Focus is on the D-pad, awkward on motion controllers: the off-hand
+    -- trigger sends it (when it isn't raising the C.A.T.).
+    if M.focus and off_trigger > 128 then
+        state.Gamepad.wButtons = state.Gamepad.wButtons | XINPUT_GAMEPAD_DPAD_UP
+    end
     if M.force_lt then
         state.Gamepad.bLeftTrigger = 255
     elseif M.block_lt then
         state.Gamepad.bLeftTrigger = 0
     end
-    -- The right grip raises the C.A.T. instead of leaning.
-    if M.clear_rb and right_grip then
-        state.Gamepad.wButtons = state.Gamepad.wButtons & ~XINPUT_GAMEPAD_RIGHT_SHOULDER
+    -- The main hand's grip raises the C.A.T. instead of reaching the game
+    -- (right-handed: RB, which is lean; left-handed: LB).
+    local main_bit = M.main_grip_bit or XINPUT_GAMEPAD_RIGHT_SHOULDER
+    if M.clear_rb and wb_in & main_bit ~= 0 then
+        state.Gamepad.wButtons = state.Gamepad.wButtons & ~main_bit
         M.diag.wb_clear = state.Gamepad.wButtons
     end
     -- Lean moves to the left grip, which Routine doesn't otherwise use.
@@ -212,8 +221,25 @@ local function apply_overrides(state)
     if M.inject_rx ~= nil then
         state.Gamepad.sThumbRX = M.inject_rx
     end
+    -- Y opens the menu: Y itself never reaches the game, and a tap sends
+    -- Start for a moment (game.lua decides what counts as a tap).
+    if M.y_to_menu then
+        state.Gamepad.wButtons = state.Gamepad.wButtons & ~XINPUT_GAMEPAD_Y
+    end
+    if M.start_pulse > 0 then
+        state.Gamepad.wButtons = state.Gamepad.wButtons | XINPUT_GAMEPAD_START
+    end
     if M.block_stick_pitch then
         state.Gamepad.sThumbRY = 0
+    end
+    for button in pairs(injected) do
+        if button == "LT" then
+            state.Gamepad.bLeftTrigger = 255
+        elseif button == "RT" then
+            state.Gamepad.bRightTrigger = 255
+        elseif M.BITS[button] then
+            state.Gamepad.wButtons = state.Gamepad.wButtons | M.BITS[button]
+        end
     end
 
     M.diag.rb_out = state.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER ~= 0
@@ -232,79 +258,10 @@ function M.apply(state)
     apply_overrides(state)
 end
 
+-- What the player pulls on the triggers, before any edits.
 function M.apply_mapping(state)
     M.left_trigger = state.Gamepad.bLeftTrigger or 0
     M.right_trigger = state.Gamepad.bRightTrigger or 0
-
-    local device = M.device
-    if device == nil then return end
-
-    -- Leave a real gamepad alone when the player isn't using motion controllers.
-    if not vr.is_runtime_ready() or not vr.is_using_controllers() then
-        return
-    end
-
-    local gp = state.Gamepad
-
-    if M.block_right_stick then
-        gp.sThumbRX, gp.sThumbRY = 0, 0
-    end
-
-    -- Layout switched off in the panel: UEVR's own mapping goes through as-is.
-    if not settings.get("custom_buttons") then
-        return
-    end
-
-    -- UEVR's overlay is open: it already filtered the state, don't add to it.
-    if uevr.params.functions.is_drawing_ui() then
-        return
-    end
-
-    local pressed = {}
-    for button, inputs in pairs(device.buttons) do
-        if M.any_held(inputs) then pressed[button] = true end
-    end
-    for trig, inputs in pairs(device.triggers) do
-        if M.any_held(inputs) then pressed[trig] = true end
-    end
-
-    -- Both stick clicks together is UEVR's menu toggle; keep it out of the game.
-    if pressed.LS and pressed.RS then
-        pressed.LS, pressed.RS = nil, nil
-    end
-
-    if M.trigger_sends ~= nil and pressed.RT then
-        pressed.RT = nil
-        pressed[M.trigger_sends] = true
-    end
-
-    for button in pairs(injected) do pressed[button] = true end
-
-    -- User remaps: logical button -> different gamepad button.
-    local remap = settings.get("remap") or {}
-    local out = {}
-    for button in pairs(pressed) do
-        out[remap[button] or button] = true
-    end
-
-    local bits = gp.wButtons & UEVR_OWNED
-    for button in pairs(out) do
-        local bit = M.BITS[button]
-        if bit ~= nil then bits = bits | bit end
-    end
-
-    gp.wButtons = bits
-    gp.bLeftTrigger = out.LT and 255 or 0
-    gp.bRightTrigger = out.RT and 255 or 0
-
-    local names = {}
-    for _, name in ipairs(M.BUTTON_NAMES) do
-        local bit = M.BITS[name]
-        if (bit ~= nil and bits & bit ~= 0) or (name == "LT" and out.LT) or (name == "RT" and out.RT) then
-            names[#names + 1] = name
-        end
-    end
-    M.last_sent = table.concat(names, " ")
 end
 
 return M
