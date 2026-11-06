@@ -10,10 +10,6 @@
 
 ## Check in the headset
 
-- **Y menu**: Y is now read from the buttons the game receives (the direct
-  read was always false); check a tap opens the menu.
-- **Inspect with motion hands**: the C.A.T. stays in the glove; check
-  inspect still behaves.
 - **LT is Focus**: check what Focus does in the game.
 - **Other headsets**: only Quest Touch has been played.
 
