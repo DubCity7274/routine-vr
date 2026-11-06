@@ -43,39 +43,6 @@ Not included (get them from their authors):
   the fisheye, grain and sharpen effects; Routine VR drives its `rpp`
   console commands). Download its zip and pass it to the installer.
 
-## Manual install (no installer)
-
-Each release has a `routine-vr-<version>-profile.zip` with just the mod: a
-`Routine-Win64-Shipping` folder (UEVR's profile for the game).
-
-- **Windows:** extract it into `%APPDATA%\UnrealVRMod\`, so you end up with
-  `%APPDATA%\UnrealVRMod\Routine-Win64-Shipping\config.txt` and `scripts\`.
-- **Linux (Proton):** extract it into
-  `<Steam library>/steamapps/compatdata/606160/pfx/drive_c/users/steamuser/AppData/Roaming/UnrealVRMod/`.
-
-If you already have a UEVR profile for Routine, back up its `config.txt`
-first: the zip's `config.txt` replaces it (the installers merge instead).
-To remove a manual install, delete `scripts\routine_vr`,
-`scripts\routine_vr.lua` and `user_script.txt` from that folder (and
-restore your `config.txt` backup).
-
-## Headsets and controllers
-
-The controller layout is picked automatically from the headset name UEVR
-logs at startup; you can choose one by hand in the panel's Controllers
-section. Layouts: Meta Quest / Rift (Touch), Valve Index (also Bigscreen
-Beyond, Varjo, Pimax), Pico, Windows Mixed Reality (Reverb and others), HTC
-Vive wands (Vive Focus, XR Elite and Cosmos use the Touch layout).
-
-With UEVR's default buttons (the default), UEVR maps every controller
-itself, so buttons work on any of them. The layout covers the mod's own
-reads (recenter chord, finger curl) and, on OpenVR only, a per-controller
-aim pitch fix. Under OpenXR (the default) all controllers share the same
-grip and aim poses, so the glove alignment carries over between them.
-
-Only the Quest 3 has been tested so far. Controllers without B/Y recenter
-with both stick/pad clicks held for 3 seconds instead of B + Y.
-
 ## Install on Windows
 
 1. Install UEVR and its requirements (see the UEVR page).
@@ -131,6 +98,39 @@ Then:
 
 Pre-rendered cutscenes play on a flat screen in front of you. That's normal
 for UEVR: videos aren't rendered in 3D.
+
+## Manual install (no installer)
+
+Each release has a `routine-vr-<version>-profile.zip` with just the mod: a
+`Routine-Win64-Shipping` folder (UEVR's profile for the game).
+
+- **Windows:** extract it into `%APPDATA%\UnrealVRMod\`, so you end up with
+  `%APPDATA%\UnrealVRMod\Routine-Win64-Shipping\config.txt` and `scripts\`.
+- **Linux (Proton):** extract it into
+  `<Steam library>/steamapps/compatdata/606160/pfx/drive_c/users/steamuser/AppData/Roaming/UnrealVRMod/`.
+
+If you already have a UEVR profile for Routine, back up its `config.txt`
+first: the zip's `config.txt` replaces it (the installers merge instead).
+To remove a manual install, delete `scripts\routine_vr`,
+`scripts\routine_vr.lua` and `user_script.txt` from that folder (and
+restore your `config.txt` backup).
+
+## Headsets and controllers
+
+The controller layout is picked automatically from the headset name UEVR
+logs at startup; you can choose one by hand in the panel's Controllers
+section. Layouts: Meta Quest / Rift (Touch), Valve Index (also Bigscreen
+Beyond, Varjo, Pimax), Pico, Windows Mixed Reality (Reverb and others), HTC
+Vive wands (Vive Focus, XR Elite and Cosmos use the Touch layout).
+
+With UEVR's default buttons (the default), UEVR maps every controller
+itself, so buttons work on any of them. The layout covers the mod's own
+reads (recenter chord, finger curl) and, on OpenVR only, a per-controller
+aim pitch fix. Under OpenXR (the default) all controllers share the same
+grip and aim poses, so the glove alignment carries over between them.
+
+Only the Quest 3 has been tested so far. Controllers without B/Y recenter
+with both stick/pad clicks held for 3 seconds instead of B + Y.
 
 ## The Routine VR panel
 
