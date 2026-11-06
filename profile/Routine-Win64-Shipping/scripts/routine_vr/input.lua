@@ -54,6 +54,8 @@ M.start_pulse = 0.0           -- seconds left of a Start press sent for a Y tap
 M.swap_triggers = false       -- left-handed: left index interacts (RT), right trigger is the off one
 M.focus = false               -- the off-hand trigger sends Focus (D-pad up; game.lua)
 M.xi_in = 0                   -- buttons UEVR sent in the last poll, before any edits
+M.xi_seen = 0                 -- every button UEVR sent in any poll since the last take_seen()
+M.polls = 0                   -- XInput polls so far
 M.right_grip = false          -- right grip as read on the engine tick (game.lua), for raising the C.A.T.
 M.diag = { polls = 0, gate = "?", rb_in = false, rb_out = false, lt_out = 0, rx_out = 0,
            rgrip = false, clear = false, wb_in = 0, wb_clear = -1, wb_out = 0 }
@@ -163,6 +165,18 @@ end
 
 function M.inject(button) injected[button] = true end
 
+-- Buttons UEVR sent since the last call, for reads on the engine tick
+-- (face buttons included; UEVR's direct reads of them came back false).
+-- nil when the game hasn't polled since, so the caller keeps what it had.
+local seen_polls = -1
+function M.take_seen()
+    if M.polls == seen_polls then return nil end
+    seen_polls = M.polls
+    local b = M.xi_seen
+    M.xi_seen = 0
+    return b
+end
+
 function M.right_stick_x()
     vr.get_joystick_axis(source("right"), axis)
     return axis.x
@@ -254,6 +268,8 @@ function M.apply(state)
     M.diag.gate = (vr.is_runtime_ready() and "ready" or "not ready") .. ", "
         .. (vr.is_using_controllers() and "using controllers" or "NOT using controllers")
     M.xi_in = state.Gamepad.wButtons
+    M.xi_seen = M.xi_seen | M.xi_in
+    M.polls = M.polls + 1
     M.apply_mapping(state)
     apply_overrides(state)
 end

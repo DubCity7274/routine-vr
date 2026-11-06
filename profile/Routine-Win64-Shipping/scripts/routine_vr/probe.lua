@@ -12,6 +12,8 @@ local game = require("routine_vr.game")
 local input = require("routine_vr.input")
 local touch = require("routine_vr.touch")
 local roomscale = require("routine_vr.roomscale")
+local motion_hands = require("routine_vr.motion_hands")
+local handed = require("routine_vr.handed")
 
 local M = {}
 
@@ -154,7 +156,7 @@ local function components(label, actor)
 end
 
 local function flags()
-    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s", input.left_trigger or 0,
+    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s hand=%s cat=%s@%s scale=%s start=%.2f", input.left_trigger or 0,
         tostring(game.raised), tostring(game.inspecting), tostring(touch.touching),
         touch.presses or 0, tostring(touch.last_error), tostring(input.diag.gate), tostring(input.diag.rb_in),
         tostring(input.diag.rb_out), tostring(input.diag.lt_out), tostring(input.diag.rx_out), tostring(input.diag.rgrip), tostring(input.diag.clear),
@@ -165,7 +167,8 @@ local function flags()
             if not ok then return "err" end
             return string.format("bits:%s B:%s Y:%s", tostring(bits), tostring(b), tostring(y))
         end)() .. (game.turn_error and (" err " .. game.turn_error) or ""),
-        tostring(touch.signature))
+        tostring(touch.signature), handed.main(), tostring(motion_hands.cat_place), tostring(motion_hands.cat_where), tostring(motion_hands.cat_scale),
+        input.start_pulse or 0)
 end
 
 local function save()

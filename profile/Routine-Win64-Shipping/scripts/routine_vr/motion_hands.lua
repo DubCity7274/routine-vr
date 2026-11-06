@@ -30,6 +30,7 @@ local M = {}
 local api = uevr.api
 local WORLD_SPACE = 0
 local COMPONENT_SPACE = 1
+local RTS_COMPONENT = 2      -- ERelativeTransformSpace, for GetSocketTransform
 local COLLAPSE = 0.001
 local RETRY_SECONDS = 5.0
 local HAND = { left = 0, right = 1 }
@@ -187,6 +188,7 @@ local function conj(q) return { w = q.w, x = -q.x, y = -q.y, z = -q.z } end
 -- for both hands. The game's live pose differed per hand and curled both
 -- hands whenever the C.A.T. came out.
 local mirror_right_fingers
+local mirror_frame
 local learn_arms
 
 local function learn_fingers(mesh)
@@ -224,6 +226,8 @@ local function learn_fingers(mesh)
     if settings.get("right_rest_from_left") then
         pcall(mirror_right_fingers, mesh)
     end
+    local ok, n, c = pcall(mirror_frame, mesh)
+    M.mirror_n, M.mirror_c = ok and n or nil, ok and c or nil
 end
 
 -- Reflect a rotation across the plane with normal n (M R M as a quaternion).
@@ -242,14 +246,75 @@ function M.mirror_transform(xf, n, c)
     return { q = qmul(mirror_q(xf.q, n), c), t = mirror_v(xf.t, n) }
 end
 
-mirror_right_fingers = function(mesh)
+-- The body's middle plane (normal n, left to right upper arm) and the
+-- right side's frame correction c, from the reference pose; nil if the
+-- arms can't be read.
+mirror_frame = function(mesh)
     local lu = read_transform(mesh, "Bone_Arm_L_Upperarm_01")
     local ru = read_transform(mesh, "Bone_Arm_R_Upperarm_01")
     local n = { x = ru.t.x - lu.t.x, y = ru.t.y - lu.t.y, z = ru.t.z - lu.t.z }
     local len = math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z)
-    if len < 1e-3 then return end
+    if len < 1e-3 then return nil end
     n = { x = n.x / len, y = n.y / len, z = n.z / len }
-    local c = qmul(conj(mirror_q(lu.q, n)), ru.q)
+    return n, qmul(conj(mirror_q(lu.q, n)), ru.q)
+end
+
+-- The C.A.T.'s offset from the right glove's tool socket, carried to the
+-- left glove's: the same hold mirrored across the body (the C.A.T. itself
+-- isn't mirrored). The left socket's frame isn't the right one's mirror
+-- image (the skeleton turns its right side by c), so reusing the right
+-- offset as it was put the C.A.T. off the left hand. With R the right
+-- tool's rotation and m() the reflection: left tool = m(R) m(c)^-1, so
+-- the offset becomes rotation m(c q), position m(c) applied to m(t).
+function M.mirror_offset(loc, rot, n, c)
+    local q = M.rot_to_quat(rot[1], rot[2], rot[3])
+    local mc = mirror_q(c, n)
+    local t = qrot(mc, mirror_v({ x = loc[1], y = loc[2], z = loc[3] }, n))
+    local p, y, r = M.quat_to_rot(mirror_q(qmul(c, q), n))
+    return { t.x, t.y, t.z }, { p, y, r }
+end
+
+-- The left glove's hold: the C.A.T.'s offset from the game's right-hand
+-- socket (Socket_Hand_R; there's no matching left one to swap to), taken
+-- back to the right palm bone, then mirrored onto the left palm bone,
+-- which the C.A.T. attaches to. The socket-to-palm step is read live in
+-- component space; it's the same whatever pose the hand is in.
+-- Read in world space: the posed copy's component space is skewed by its
+-- collapsed pelvis, which made the left C.A.T. too big and off the palm.
+-- Also returns the C.A.T.'s world scale in the right glove, so the left one
+-- is set to exactly that size.
+local function world_xf(mesh, name)
+    local t = mesh:GetSocketTransform(name, 0)
+    local sc = 1
+    pcall(function() sc = t.Scale3D.X end)
+    if type(sc) ~= "number" or math.abs(sc) < 1e-6 then sc = 1 end
+    return { q = { x = t.Rotation.X, y = t.Rotation.Y, z = t.Rotation.Z, w = t.Rotation.W },
+             t = { x = t.Translation.X, y = t.Translation.Y, z = t.Translation.Z }, s = sc }
+end
+
+function M.left_hold(mesh, socket, loc, rot, scale)
+    local palm = world_xf(mesh, PALM.right)
+    local st = world_xf(mesh, socket)
+    local ip = conj(palm.q)
+    local rs_q = qmul(ip, st.q)
+    local rs_t = qrot(ip, { x = (st.t.x - palm.t.x) / palm.s, y = (st.t.y - palm.t.y) / palm.s,
+                            z = (st.t.z - palm.t.z) / palm.s })
+    local k = st.s / palm.s
+    local q = qmul(rs_q, M.rot_to_quat(rot[1], rot[2], rot[3]))
+    local d = qrot(rs_q, { x = loc[1] * k, y = loc[2] * k, z = loc[3] * k })
+    local t = { rs_t.x + d.x, rs_t.y + d.y, rs_t.z + d.z }
+    local p, y, r = M.quat_to_rot(q)
+    local l, mr = M.mirror_offset(t, { p, y, r }, M.mirror_n, M.mirror_c)
+    -- The offset is applied under the left palm, scaled by its own size.
+    local ls = world_xf(mesh, PALM.left).s
+    l = { l[1] / ls, l[2] / ls, l[3] / ls }
+    local base = scale or { 1, 1, 1 }
+    return l, mr, { base[1] * st.s, base[2] * st.s, base[3] * st.s }
+end
+
+mirror_right_fingers = function(mesh)
+    local n, c = mirror_frame(mesh)
+    if n == nil then return end
 
     for _, chain in ipairs(CHAINS) do
         local lb, rb = chain_bones("left", chain), chain_bones("right", chain)
@@ -294,7 +359,10 @@ end
 -- while put away, with motion hands on: the game's own lowered pose follows
 -- its hidden arms, so the C.A.T. floated in front of you while crawling).
 M.cat_place = "home"
+M.cat_scale = "?"          -- C.A.T. world scale and the gloves' palm/socket scales, for the recorder
+M.cat_where = "?"          -- what the C.A.T. is attached to (parent:socket), for the recorder
 local hit_result = nil
+local show_wait = 0
 
 -- Set a component's relative transform (UE loc/rot tables).
 local function set_relative(comp, loc, rot)
@@ -308,6 +376,24 @@ local function set_relative(comp, loc, rot)
     comp:K2_SetRelativeLocationAndRotation(l, r, false, hit_result, false)
 end
 
+-- The holster offset is in the character's own terms (forward, right, up
+-- cm from the pelvis, and a turn from facing forward), so it lands beside
+-- the hip whatever way the pelvis bone's axes point; at zero the C.A.T.
+-- sat inside the suit's hips. Turned into the bone's frame once, as it's
+-- put away; after that it rides with the hips.
+local body_bone
+function M.holster_relative(o)
+    local pelvis = body_bone("Bone_Pelvis")
+    local pawn = api:get_local_pawn(0)
+    local yaw = pawn and safe(function() return pawn:K2_GetActorRotation().Yaw end) or 0
+    local face = M.rot_to_quat(0, yaw, 0)
+    local off = qrot(face, { x = o.loc[1], y = o.loc[2], z = o.loc[3] })
+    local ip = conj(pelvis.q)
+    local t = qrot(ip, off)
+    local p, y, r = M.quat_to_rot(qmul(ip, qmul(face, M.rot_to_quat(o.rot[1], o.rot[2], o.rot[3]))))
+    return { t.x, t.y, t.z }, { p, y, r }
+end
+
 -- Move the C.A.T. to place ("home", "glove", "holster").
 local function move_cat(place, socket)
     local h = cat_home
@@ -316,12 +402,27 @@ local function move_cat(place, socket)
         -- Back to the game's own relative offset first, so a holster offset
         -- never carries over into the glove or the game's pose.
         set_relative(h.root, h.rel_loc, h.rel_rot)
+        -- And its own size: the game scales the C.A.T. for its first-person
+        -- view. Snapping it to the hip reset that to 1, and the bigger C.A.T.
+        -- then came back into the hand. Every move keeps the game's scale.
+        if h.rel_scale ~= nil then
+            local sc = h.root.RelativeScale3D
+            sc.X, sc.Y, sc.Z = h.rel_scale[1], h.rel_scale[2], h.rel_scale[3]
+            h.root:SetRelativeScale3D(sc)
+        end
         if place == "glove" then
             h.root:K2_AttachToComponent(M.mesh, socket, 0, 0, 0, false)
+            if handed.is_left() and M.mirror_n ~= nil then
+                local l, r, ws = M.left_hold(M.mesh, h.socket_name, h.rel_loc, h.rel_rot, h.rel_scale)
+                set_relative(h.root, l, r)
+                local sc = h.root.RelativeScale3D
+                sc.X, sc.Y, sc.Z = ws[1], ws[2], ws[3]
+                h.root:SetWorldScale3D(sc)
+            end
         elseif place == "holster" then
-            local o = settings.get("cat_holster_" .. handed.main())
-            h.root:K2_AttachToComponent(M.body, "Bone_Pelvis", 2, 2, 2, false) -- snap to the bone
-            set_relative(h.root, o.loc, o.rot)
+            h.root:K2_AttachToComponent(M.body, "Bone_Pelvis", 2, 2, 0, false) -- snap to the bone, keep its size
+            local l, r = M.holster_relative(settings.get("cat_holster_" .. handed.main()))
+            set_relative(h.root, l, r)
         else
             h.root:K2_AttachToComponent(h.parent, h.socket, 0, 0, 0, false)
             set_relative(h.root, h.rel_loc, h.rel_rot)
@@ -341,6 +442,7 @@ end
 
 local function destroy()
     release_cat()
+    game.cat_managed = false
     cat_home = nil
     for _, m in pairs(markers) do
         pcall(function() UEVR_UObjectHook.remove_motion_controller_state(m) end)
@@ -503,7 +605,7 @@ local MAX_STRETCH = 1.5   -- the arm may lengthen this much to reach the hand
 local RTS_WORLD = 0
 
 -- A body bone's live world transform.
-local function body_bone(name)
+body_bone = function(name)
     local body = M.body
     local t = body:GetSocketTransform(name, RTS_WORLD)
     return { q = { x = t.Rotation.X, y = t.Rotation.Y, z = t.Rotation.Z, w = t.Rotation.W },
@@ -688,9 +790,17 @@ local function pose_fingers(side, palm_loc, palm_q, rot_s, loc_s, one, delta)
     -- (the game only animates a right-hand grip; a left hand holding it
     -- closes its fingers instead).
     local holding = side == handed.main() and M.holding_cat
-    local game_grip = holding and side == "right"
+    -- Left-handed, the left hand takes the right hand's grip mirrored
+    -- across the body (same mirror as its hold on the C.A.T.).
+    local mirrored = holding and side == "left" and M.mirror_n ~= nil
+    local game_grip = holding and (side == "right" or mirrored)
     local axis = AXES[settings.get("finger_axis")] or AXES.z
-    local sign = settings.get("finger_flip_" .. side) and -1 or 1
+    local sign = settings.get("finger_flip_" .. (mirrored and "right" or side)) and -1 or 1
+    local mc, imc
+    if mirrored then
+        mc = mirror_q(M.mirror_c, M.mirror_n)
+        imc = conj(mc)
+    end
     local k = math.min(1.0, delta * CURL_SPEED)
     for _, chain in ipairs(CHAINS) do
         -- The thumb never takes the game's grip (it sank into the C.A.T.).
@@ -700,15 +810,17 @@ local function pose_fingers(side, palm_loc, palm_q, rot_s, loc_s, one, delta)
         local wrap_thumb = game_grip and chain == "Thumb"
         local target = from_game and 0 or targets[chain]
         if wrap_thumb then target = settings.get("thumb_wrap") end
-        if holding and not game_grip and chain ~= "Thumb" and chain ~= "Finger_A" then target = 1 end
+        if holding and not game_grip and chain ~= "Thumb" and chain ~= "Finger_A" then target = 1 end -- no mirror frame yet
         if preview > 0 then target = preview end
         local c = (curl[side][chain] or 0)
         c = c + (target - c) * k
         curl[side][chain] = c
         local maxes = chain == "Thumb" and JOINT_MAX.thumb or JOINT_MAX.finger
         local ploc, pq = palm_loc, palm_q
+        local twins = chain_bones("right", chain)
         for i, b in ipairs(chain_bones(side, chain)) do
-            local lp = (from_game and game_pose(b)) or (wrap_thumb and modelled[b]) or rest[b]
+            local src = mirrored and twins[i] or b
+            local lp = (from_game and game_pose(src)) or (wrap_thumb and modelled[src]) or rest[src]
             if lp == nil then break end
             local bend = axis_quat(axis, sign * maxes[i] * c)
             -- Holding the C.A.T. the thumb's base can also swing out and
@@ -721,8 +833,14 @@ local function pose_fingers(side, palm_loc, palm_q, rot_s, loc_s, one, delta)
                 bend = qmul(bend, qmul(axis_quat(others[1], 60 * settings.get("thumb_swing_1")),
                                         axis_quat(others[2], 60 * settings.get("thumb_swing_2"))))
             end
-            local q = qmul(pq, qmul(lp.q, bend))
-            local d = qrot(pq, lp.t)
+            local lq, lt = qmul(lp.q, bend), lp.t
+            if mirrored then
+                -- Right local pose -> left: m(c) m(q) m(c)^-1, m(c) M t.
+                lq = qmul(mc, qmul(mirror_q(lq, M.mirror_n), imc))
+                lt = qrot(mc, mirror_v(lt, M.mirror_n))
+            end
+            local q = qmul(pq, lq)
+            local d = qrot(pq, lt)
             local loc = { X = ploc.X + d.x, Y = ploc.Y + d.y, Z = ploc.Z + d.z }
             local p, y, r = M.quat_to_rot(q)
             place_bone(mesh, b, loc, { Pitch = p, Yaw = y, Roll = r }, rot_s, loc_s, one)
@@ -735,6 +853,7 @@ end
 -- its arms mesh, so it sits in the hand as designed. Only while it's out;
 -- put away, it goes back to the game's arms so the game can lower it.
 local function update_cat()
+    game.cat_managed = M.mesh ~= nil
     local raised = game.raised and settings.get("motion_hands")
     local cls = api:find_uobject("Class /Script/Routine.RoutineGameCAT")
     local cat = cls and UEVR_UObjectHook.get_first_object_by_class(cls, false)
@@ -751,16 +870,27 @@ local function update_cat()
         local socket = safe(function() return root.AttachSocketName end)
         local rl = safe(function() local v = root.RelativeLocation; return { v.X, v.Y, v.Z } end) or { 0, 0, 0 }
         local rr = safe(function() local v = root.RelativeRotation; return { v.Pitch, v.Yaw, v.Roll } end) or { 0, 0, 0 }
+        local rs = safe(function() local v = root.RelativeScale3D; return { v.X, v.Y, v.Z } end)
         if parent == nil then return end
-        cat_home = { root = root, addr = addr, parent = parent, socket = socket, rel_loc = rl, rel_rot = rr }
-        M.cat_socket = safe(function() return type(socket) == "string" and socket or socket:to_string() end) or "?"
+        local sname = safe(function() return type(socket) == "string" and socket or socket:to_string() end) or "?"
+        -- After a script reload the C.A.T. can still be on our glove or the
+        -- hip: learning that as home carried the holster offset into the hand.
+        local pname = safe(function() return parent:get_fname():to_string() end) or ""
+        if pname:find("Poseable", 1, true) or sname == "Bone_Pelvis" then
+            -- Fall back to the game's own spot: the arms mesh's hand socket.
+            local pawn = api:get_local_pawn(0)
+            local arms = pawn and find_arms(pawn)
+            if arms == nil then return end
+            parent, socket, sname, rl, rr, rs = arms, "Socket_Hand_R", "Socket_Hand_R", { 0, 0, 0 }, { 0, 0, 0 }, nil
+        end
+        cat_home = { root = root, addr = addr, parent = parent, socket = socket, socket_name = sname, rel_loc = rl, rel_rot = rr, rel_scale = rs }
+        M.cat_socket = sname
     end
     -- The glove socket: the game's own (right palm), or the left palm's
     -- matching one for left-handers.
     local socket = cat_home.socket
     if handed.is_left() then
-        local name = safe(function() return type(socket) == "string" and socket or socket:to_string() end) or "Bone_Palm_R_Tool"
-        socket = name:gsub("_R_", "_L_")
+        socket = PALM.left
     end
 
     local want
@@ -782,6 +912,38 @@ local function update_cat()
         if move_cat(want, socket) then M.cat_sig = sig end
     end
     M.holding_cat = M.cat_place == "glove"
+    -- The game hides the put-away C.A.T. (it was gone from the hip, and
+    -- while crawling); show it again now and then while it's holstered.
+    if M.cat_place == "holster" then
+        show_wait = show_wait - 1
+        if show_wait <= 0 then
+            show_wait = 15
+            pcall(function() cat:SetActorHiddenInGame(false) end)
+            local skel = safe(function() return cat.SkeletalMeshComponent end)
+            if skel ~= nil then
+                pcall(function() skel:SetHiddenInGame(false, false) end)
+                pcall(function() skel:SetVisibility(true, false) end)
+                pcall(function() skel:SetOwnerNoSee(false) end)
+            end
+        end
+    else
+        show_wait = 0
+    end
+    M.cat_scale = safe(function()
+        local v = root:K2_GetComponentScale()
+        local out = string.format("%.2f mirror %s", v.X, M.mirror_n and "yes" or "no")
+        if M.mesh ~= nil then
+            out = out .. string.format(" palmL %.2f palmR %.2f sock %.2f", world_xf(M.mesh, PALM.left).s,
+                world_xf(M.mesh, PALM.right).s, world_xf(M.mesh, cat_home.socket_name or "Socket_Hand_R").s)
+        end
+        return out
+    end) or "?"
+    M.cat_where = safe(function()
+        local p = root.AttachParent
+        local sock = root.AttachSocketName
+        sock = type(sock) == "string" and sock or (sock and sock:to_string()) or ""
+        return (p and p:get_fname():to_string() or "nil") .. ":" .. sock
+    end) or "?"
 end
 
 local function set_shown(want)

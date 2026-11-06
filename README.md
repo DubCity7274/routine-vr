@@ -8,17 +8,20 @@ What it adds on top of plain UEVR:
 
 | Feature | How |
 |---|---|
-| 6DoF head + room-scale walking | UEVR `RoomscaleMovement` with collision sweep (your real steps move the pawn, walls stop you) |
-| Aim with your right hand | `AimMethod = Right Controller`, decoupled pitch, left-hand-relative movement |
-| Physical crouch | Duck in real life and the game crouches. Stays in sync with the game's `bIsCrouched` when it can read it |
-| Game menu | Tap Y (sends Start; Y no longer inspects, switchable in the panel) |
-| Recenter | Hold B + Y for 3 s (works in menus), or the panel button: recenters the view, resets the standing origin, recalibrates your height |
-| C.A.T. in your hand | The C.A.T. follows the right controller and moves to the left hand while you inspect it. Other parts can be attached in the panel |
+| 6DoF head + room-scale walking | UEVR `RoomscaleMovement` with collision sweep (your real steps move you, walls stop you) |
+| Motion hands and body | The suit's own arms follow your controllers, attached at the body's shoulders, with finger curl from the triggers/grips. Look down and you see the suit's body (with the ID card on the chest) |
+| Body follows your head | Turn your head past a dead zone and the character turns with you; the view itself never moves (dead zone and speed sliders) |
+| C.A.T. in your hand | Grip to raise it: it sits in the glove the way the game holds it. Hold, toggle, or draw it from your hip like a holster. Put away, it hangs on your hip |
+| Touch the C.A.T.'s buttons | Press its side buttons with your other index finger (the controller buzzes) |
+| Aim with your hand | `AimMethod = Right Controller` (left in left-handed mode); turning stays smooth with the C.A.T. out |
+| Left-handed mode | One checkbox swaps the C.A.T., aim, interact trigger, touch and grips |
+| Physical crouch | Duck in real life and the game crouches |
+| Game menu | Tap Y |
+| Recenter | Hold B + Y for 3 s (works in menus), or the panel button |
 | Cutscenes and menus | Pre-rendered cutscenes on a flat 2D screen, menus with plain aim; gameplay switches back automatically |
-| Per-headset layouts | `devices/*.lua`: Quest Touch, Index, Pico, WMR, Vive wands |
-| Comfort | Fisheye lens, film grain, sharpen, vignette, motion blur, DoF, chromatic aberration, and lens flares off (switchable in the panel; fisheye/grain/sharpen need the PPV pak mod) |
-| Laser pointer | From the right hand while inspecting the C.A.T. (or always), so you can see what you're clicking |
-| Terminals | Point with your right hand (the laser shows the exact line) and pull the trigger |
+| Headset auto-detect | The controller layout is picked from the headset UEVR finds: Quest Touch, Index, Pico, WMR, Vive wands |
+| Comfort | Fisheye lens, film grain, sharpen, vignette, motion blur, DoF, chromatic aberration and lens flares off (switchable; fisheye/grain/sharpen need the PPV pak mod) |
+| Rendering | Native Stereo with UEVR's Native Stereo Fix, so the C.A.T.'s screen shows in both eyes |
 
 ## What's in this repo
 
@@ -128,42 +131,49 @@ Then:
 Pre-rendered cutscenes play on a flat screen in front of you. That's normal
 for UEVR: videos aren't rendered in 3D.
 
-## Hands
+## The Routine VR panel
 
-The C.A.T. is attached to your right hand out of the box. Two things go on
-the controller: the pawn's `CameraComponent`, which is where Routine points
-and clicks from (and where the laser starts), and the C.A.T. itself, listed
-as `C.A.T.`. To adjust the C.A.T., click both thumbsticks to open the UEVR
-overlay. The **Routine VR** window opens beside UEVR's own window. In
-**Hands (6DoF)**, expand `C.A.T.` and move the sliders. Leave
-`CameraComponent` at zero unless the pointer feels off your hand.
+Click both thumbsticks to open UEVR's overlay; the **Routine VR** window
+opens beside UEVR's own. Everything below has its settings there, and they
+are saved in `<profile>/data/routine_vr.json`.
 
-The C.A.T. is only on your hand while you hold LT or inspect it, so letting
-go of LT puts it away. Its inspect pose (left hand, side buttons toward you)
-has its own sliders at the top of **Hands (6DoF)**.
+## Hands and the C.A.T.
 
-**Touch:** with the C.A.T. out, a small dot marks your left fingertip.
-Touch one of the C.A.T.'s side buttons to press it (the left controller
-buzzes). No need to inspect. The dot's position has sliders in the
-**Touch** section, which also counts presses and shows any error.
+**Motion hands** (on by default): the game's spacesuit arms follow your
+controllers, running from the body's shoulders, so you see your own arms.
+The index finger follows the trigger, the other fingers the grip, the thumb
+the face buttons and thumbrest. If the gloves don't line up with your real
+hands, each has offset sliders in the **Motion hands** section.
 
-**Raising the C.A.T.:** hold LT, or hold the right grip. In the panel's
-**C.A.T.** section the grip can be switched to press-to-toggle, **grip at
-right hip** (reach to your hip and grip to draw it, like a holster; the
-controller buzzes when your hand is there) or off.
-Lean (needed in the tutorial) is on the **left grip** in gameplay, since
-Routine has no use for LB; menus still get LB. The C.A.T.'s
-precise-aim turn, which turned the view slowly while it was out, is
+**Raising the C.A.T.:** hold the right grip. In the **C.A.T.** section the
+grip can be switched to press-to-toggle, **grip at your hip** (reach to your
+hip and grip to draw it; the controller buzzes when your hand is there) or
+off. The C.A.T. sits in your glove the way the game holds it.
+
+**Hip holster:** put away, the C.A.T. hangs on your hip (so it's out of
+the way when crawling). Its position and angle have sliders in **Motion
+hands**, kept separately for right- and left-handed mode.
+
+**Touch:** with the C.A.T. out, press one of its side buttons with your
+other index finger (the controller buzzes). No need to inspect.
+
+**Lean** (needed in the tutorial) is on the **left grip** in gameplay,
+since Routine has no use for LB. The C.A.T.'s slow precise-aim turn is
 replaced by a steady turn (speed slider in the **C.A.T.** section).
 
-Other parts can be attached the same way: **Rescan pawn**, then **R** or **L**
-next to a component.
+**Left-handed mode** (checkbox in the **C.A.T.** section): the C.A.T., aim,
+grip-raise and the hip holster move to the left hand, touch and lean to the
+right, and the left trigger becomes interact.
 
-Attachments are saved by component name in
-`<profile>/data/routine_vr.json` and re-applied after level loads.
+**Body:** the suit's body is shown under you, head hidden, with the ID card
+on the chest. **Body turns to follow your head** turns the character once
+your head is past the dead zone; tune the dead zone and speed in **Motion
+hands**.
 
-UEVR's built-in **UObjectHook** tab does the same job with more knobs. Use it
-if a part needs something the panel lacks.
+With motion hands off, the mod falls back to UEVR attachments: the C.A.T.
+and the pawn's `CameraComponent` (where Routine points and clicks from) go
+on the controller, with sliders in **Hands (6DoF)**. UEVR's own
+**UObjectHook** tab does the same job with more knobs.
 
 ## Default controls (Quest Touch, right-handed)
 
@@ -188,16 +198,13 @@ the right, and the left trigger becomes interact.
 | Right stick | Smooth turn (left/right only; look up and down with your head) |
 | Both stick clicks | UEVR menu |
 
-With motion hands on, the C.A.T. hangs on your hip when it's put away (so
-it's out of the way when crawling); its position has sliders in the
-Motion hands section.
-
 ## Terminals and aiming
 
 Your right hand is the game's camera direction: interaction traces, the
-crosshair's real target, and the flashlight all follow it, not your head.
-To use a terminal, point your right controller at it (the laser shows the
-exact line) and press the right trigger.
+crosshair's real target and the flashlight follow it, not your head. To use
+a terminal or pick something up, point your hand at it and pull the
+trigger. A laser pointer can be switched on in the panel if you want to see
+the exact line.
 
 ## Adding a headset
 
@@ -253,13 +260,11 @@ Any Lua 5.3+ works. On this machine:
 
 ## Status
 
-Written against UEVR nightly 01143's Lua API and Routine build 22236094.
-The mod's logic passes the offline tests (94). First in-headset run, on
-Proton 11 + OpenXR + WiVRn (Quest 3S): the game injects and loads in. That
-run found the menu-stick rotation and stereo flicker fixed above. Second
-run: Native Stereo is clean and buttons mostly work. Terminal cursors and
-hand attachments are still unverified. See
-[docs/DESIGN.md](docs/DESIGN.md#known-unknowns).
+Beta. Written against UEVR nightly 01143's Lua API and Routine build
+22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
+offline tests cover the mod's logic (229). Not tested yet: other headsets
+(the layouts are there, but only Touch has been played) and the Windows
+installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 
 ## License
 

@@ -145,6 +145,11 @@ end
 local function draw_motion_hands()
     checkbox_setting("Show motion hands (the game's spacesuit gloves on your controllers)", "motion_hands")
     checkbox_setting("Arms attached to the body's shoulders (needs the body shown)", "arm_ik")
+    checkbox_setting("Body turns to follow your head", "body_follow")
+    if settings.get("body_follow") then
+        slider_setting("Head turn before the body follows (deg)", "body_follow_deadzone", 0, 90)
+        slider_setting("Body turn speed (deg/s)", "body_follow_speed", 30, 720)
+    end
     if motion_hands.arm_error then imgui.text("Arm error: " .. motion_hands.arm_error) end
     local changed_b, vb = imgui.checkbox("Show your body (spacesuit, chest ID; head hidden)", settings.get("show_body"))
     if changed_b then
@@ -170,7 +175,7 @@ local function draw_motion_hands()
     checkbox_setting("Put-away C.A.T. hangs on your hip (keeps it out of your way when crawling)", "cat_holster")
     if settings.get("cat_holster") then
         local side = settings.get("handedness") == "left" and "left" or "right"
-        imgui.text("Hip position (put the C.A.T. away to see it):")
+        imgui.text("Hip position from your pelvis (forward/right/up cm; put the C.A.T. away to see it):")
         draw_offset_sliders({ name = "cat_holster_" .. side }, settings.get("cat_holster_" .. side))
     end
     imgui.text("Fingers: index follows the trigger, the rest the grip, thumb on buttons/thumbrest.")

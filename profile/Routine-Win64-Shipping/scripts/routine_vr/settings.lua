@@ -79,7 +79,7 @@ M.defaults = {
     hip_drop = 0.65,
     hip_side = 0.20,
     hip_back = 0.05,
-    hip_radius = 0.30,             -- the user went to ~0.36 seated; generous is easier to find
+    hip_radius = 0.27,             -- tuned standing (0.36 felt right seated)
     -- Lean (RB) on the left grip in gameplay; Routine has no use for LB.
     lean_left_grip = true,
     -- Motion hands from the game's spacesuit arms (motion_hands.lua), with
@@ -87,11 +87,18 @@ M.defaults = {
     -- forward/right/up cm), tuned in the panel.
     motion_hands = true,
     show_body = true,              -- the suit's body under you (head hidden), with the ID card
-    -- The put-away C.A.T. on the body's hip (with motion hands): offset from
-    -- the body's pelvis bone, per main hand (UE terms; tuned in the panel).
+    -- The character turns to follow your head past the dead zone (degrees),
+    -- at up to body_follow_speed deg/s; the view itself never moves.
+    body_follow = true,
+    body_follow_deadzone = 35.0,
+    body_follow_speed = 180.0,
+    -- The put-away C.A.T. on the body's hip (with motion hands), per main
+    -- hand: from the pelvis in the character's terms (forward/right/up cm,
+    -- pitch/yaw/roll from facing forward; tuned in the panel).
     cat_holster = true,
-    cat_holster_right = { rot = { 0, 0, 0 }, loc = { 0, 0, 0 } },
-    cat_holster_left = { rot = { 0, 0, 0 }, loc = { 0, 0, 0 } },
+    cat_holster_right = { rot = { 0, 0, 0 }, loc = { 0, 22, -8 } },
+    cat_holster_left = { rot = { 0, 0, 0 }, loc = { 0, -22, -8 } },
+    holster_layout = 2,
     arm_ik = true,                 -- arms run from the body's shoulders to the hands
     -- Lined up in the headset by the user (Quest 3S).
     hand_right = { rot = { 0.5, 2.1, 157.3 }, loc = { -3.0, 3.0, 0.9 } },
@@ -163,6 +170,19 @@ function M.migrate(data, loaded)
             and c.rot[1] == 0 and c.rot[2] == 0 and c.rot[3] == 0
             and c.loc[1] == 0 and c.loc[2] == 0 and c.loc[3] == 0 then
             data.cat_inspect = { hand = "left", rot = { 0, -90, 0 }, loc = { 0, 0, 0 } }
+        end
+    end
+
+    -- Holster layout 1 measured the offset in the pelvis bone's own axes,
+    -- and its zero default hid the C.A.T. inside the hips. Untouched zero
+    -- offsets take the new defaults.
+    if loaded.holster_layout ~= 2 then
+        data.holster_layout = 2
+        for _, side in ipairs({ "right", "left" }) do
+            local o = data["cat_holster_" .. side]
+            local zero = type(o) == "table" and type(o.loc) == "table" and type(o.rot) == "table"
+            for i = 1, 3 do zero = zero and o.loc[i] == 0 and o.rot[i] == 0 end
+            if zero then data["cat_holster_" .. side] = deep_copy(M.defaults["cat_holster_" .. side]) end
         end
     end
 

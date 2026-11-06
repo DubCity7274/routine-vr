@@ -59,6 +59,7 @@ M.inspecting = false
 M.raised = false
 M.cat_on_glove = false
 M.cat_hooked = false
+M.cat_managed = false        -- motion hands place the C.A.T. (glove/hip/home), not the controller hook
 
 local classes = {}
 local timer = CHECK_INTERVAL
@@ -236,6 +237,7 @@ end
 -- Panel changes to the inspect pose re-apply it.
 function M.refresh_hands()
     applied_hands = nil
+    M.follow_active, follow_last = false, nil
 end
 
 local OFFSETS = { "VR_CameraForwardOffset", "VR_CameraRightOffset", "VR_CameraUpOffset" }
@@ -251,15 +253,23 @@ end
 -- Y opens the game's menu (settings.y_opens_menu): inspect isn't needed now
 -- that the C.A.T.'s buttons are pressed by touch. A short tap sends Start;
 -- a longer hold, or one with B held too (the recenter chord), sends
--- nothing. Read with UEVR's direct reads on the tick, which work for the
--- face buttons.
+-- nothing.
 local Y_TAP = 0.4
 local START_PULSE = 0.12
 local y_held_for = nil     -- seconds Y has been down, nil when up
 local y_chord = false      -- B was held during this Y press
 
+local seen_y, seen_b = false, false
+
 local function update_y_menu(delta)
     input.start_pulse = math.max(0, input.start_pulse - delta)
+    -- Y and B as UEVR sent them to the game (any poll since the last tick;
+    -- unchanged when the game didn't poll). UEVR's direct reads of the face
+    -- buttons always read false here, so a tap was never seen.
+    local bits = input.take_seen()
+    if bits ~= nil then
+        seen_y, seen_b = bits & XINPUT_GAMEPAD_Y ~= 0, bits & XINPUT_GAMEPAD_B ~= 0
+    end
     local on = settings.get("y_opens_menu")
     input.y_to_menu = on
     if not on then
@@ -267,10 +277,10 @@ local function update_y_menu(delta)
         return
     end
     local b = input.device and input.device.buttons
-    local y = b ~= nil and input.any_held(b.Y)
+    local y = seen_y or (b ~= nil and input.any_held(b.Y))
     if y then
         y_held_for = (y_held_for or 0) + delta
-        if b ~= nil and input.any_held(b.B) then y_chord = true end
+        if seen_b or (b ~= nil and input.any_held(b.B)) then y_chord = true end
     elseif y_held_for ~= nil then
         if y_held_for < Y_TAP and not y_chord then input.start_pulse = START_PULSE end
         y_held_for, y_chord = nil, false
@@ -463,9 +473,64 @@ end
 -- view (routine_vr.lua), so the correction lands in the same frame the
 -- game turned. Done in the engine tick it lagged a frame and the whole
 -- view jittered while the character turned.
+-- The body follows the head (settings.body_follow). Physically turning
+-- turns only the VR view, so the character, its body and shoulders and the
+-- hip holster stayed facing the old way. When the head is more than the
+-- dead zone away from the character's facing, the character turns toward
+-- it through its view component, and on_stereo_view turns the VR view back
+-- by the character's measured turn in the same frame: the world holds
+-- still and only the body catches up. Off while the stick turns (that
+-- turn is meant to move the view) and during a C.A.T. handover.
+local hmd_pos = UEVR_Vector3f.new()
+local hmd_rot = UEVR_Quaternionf.new()
+local follow_q = nil
+M.follow_active = false
+local follow_last = nil
+
+-- How far the head is turned from the character's facing, in degrees
+-- (UE sense, right positive), or nil.
+function M.head_yaw()
+    local ok, yaw = pcall(function()
+        vr.get_pose(vr.get_hmd_index(), hmd_pos, hmd_rot)
+        if follow_q == nil then follow_q = UEVR_Quaternionf.new() end
+        vr.get_rotation_offset(follow_q)
+        local q = hands.qmul({ w = follow_q.w, x = follow_q.x, y = follow_q.y, z = follow_q.z },
+                             { w = hmd_rot.w, x = hmd_rot.x, y = hmd_rot.y, z = hmd_rot.z })
+        local f = hands.rotate(q, { x = 0, y = 0, z = -1 })
+        if f.x * f.x + f.z * f.z < 1e-6 then return nil end -- looking straight up/down
+        return math.deg(math.atan(f.x, -f.z))
+    end)
+    return ok and yaw or nil
+end
+
+local function update_body_follow(delta)
+    M.follow_active = false
+    if not settings.get("body_follow") or M.mode ~= "game" or handover ~= nil then return end
+    if math.abs(input.right_stick_x() or 0) > TURN_DEADZONE then return end
+    local rel = M.head_yaw()
+    if rel == nil then return end
+    M.follow_active = true
+    local dz = settings.get("body_follow_deadzone")
+    if math.abs(rel) <= dz then return end
+    local excess = rel - (rel > 0 and dz or -dz)
+    local max = settings.get("body_follow_speed") * delta
+    pcall(turn_body, math.max(-max, math.min(max, excess)))
+end
+
 function M.on_stereo_view(view_index)
+    if view_index ~= 0 then return end
+    -- Body follow: undo, on the view, whatever the character turned.
+    local y = view_yaw()
+    if y ~= nil then
+        if M.follow_active and follow_last ~= nil then
+            local d = yaw_diff(y, follow_last)
+            if d ~= 0 then pcall(turn_view, -d) end
+        end
+        follow_last = y
+    end
+
     local h = handover
-    if view_index ~= 0 or h == nil or h.reading == nil or h.comp_last == nil then return end
+    if h == nil or h.reading == nil or h.comp_last == nil then return end
     local fn = YAW_READINGS[h.reading]
     local ok, y = pcall(fn, api:get_player_controller(0), api:get_local_pawn(0))
     if not ok or type(y) ~= "number" then return end
@@ -643,9 +708,14 @@ function M.tick(delta)
     M.raised = M.mode == "game" and (lt or M.grip_raise or M.inspecting)
     -- With motion hands the C.A.T. rides in the glove instead of on the
     -- controller hook (motion_hands.lua sets cat_on_glove).
-    hands.set_active(M.CAT, M.raised and not M.cat_on_glove)
+    -- Never on the hook while motion hands manage it: hooked for even one
+    -- frame on the way out of the hip, the hook saved the hip offset and
+    -- wrote it back over the glove's when it let go (the hip's pitch showed
+    -- up in the hand).
+    hands.set_active(M.CAT, M.raised and not M.cat_on_glove and not M.cat_managed)
     M.cat_hooked = hands.is_attached(M.CAT)
     update_cat_turn(delta)
+    update_body_follow(delta)
 
     -- Stick pitch tilts Routine's aim, dot and HUD away from where your
     -- head is; in VR you look up and down with your head.

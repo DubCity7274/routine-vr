@@ -571,3 +571,16 @@ fail.
   with motion hands on, else home. Each move first restores the C.A.T.'s
   original relative offset (saved with its home), so offsets don't leak.
 
+## Body follows the head
+
+The character only turned with the stick, so physically turning left the
+body, shoulders and hip holster facing the old way. game.head_yaw() is the
+head's yaw relative to the character: the HMD pose times UEVR's rotation
+offset (the same composition turn_view relies on), forward = -z. Past
+body_follow_deadzone the character turns toward the head via the view
+component (capped at body_follow_speed), and on_stereo_view turns the VR
+offset back by the character's measured yaw change in the same frame, so
+the view holds still. Off while the right stick is in use and during a
+C.A.T. handover. Confirmed in the headset: the new ID card shows on the
+chest; standing, the holster felt right at 0.27 m (now the default).
+

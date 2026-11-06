@@ -654,6 +654,33 @@ check(math.abs(game.view_turn) < 1 and math.abs((pawn_yaw + game.view_turn) - se
     "lowered: character turned at once through its view component, view unchanged")
 game_frames(12, false)
 check(input_mod.inject_rx == nil and game.last_handover:find("done", 1, true), "instant handover: no stick push needed")
+
+local function near(a, b) return a ~= nil and math.abs(a - b) < 1e-3 end
+-- Body follows the head: head turned 90 deg right, dead zone 35 deg. The
+-- character turns the other 55 deg; the VR view holds still.
+off = { w = 1, x = 0, y = 0, z = 0 }
+view_works = function() return true end
+settings.data.body_follow, settings.data.body_follow_deadzone, settings.data.body_follow_speed = true, 35, 180
+fake.poses = { [0] = { pos = { 0, 1.7, 0 }, rot = { math.cos(math.rad(45)), 0, -math.sin(math.rad(45)), 0 } } }
+check(near(game.head_yaw(), 90), "head turned 90 deg right reads as +90")
+local yaw0 = pawn_yaw
+local function off_yaw() return -math.deg(2 * math.atan(off.y, off.w)) end
+local seen0 = pawn_yaw + off_yaw()
+local worst_seen = 0
+for _ = 1, 72 do
+    game_frames(1, false)
+    worst_seen = math.max(worst_seen, math.abs((pawn_yaw + off_yaw()) - seen0))
+end
+check(near(pawn_yaw - yaw0, 55), "the character turns toward the head, up to the dead zone")
+check(worst_seen < 0.01, "the view holds still every frame while the body follows")
+check(near(game.head_yaw(), 35), "the head ends up the dead zone from the body")
+fake.axis.right = { 1.0, 0 }
+local before_turn = pawn_yaw
+game_frames(1, false)
+fake.axis.right = { 0, 0 }
+check(game.follow_active == false, "using the stick: body follow steps aside")
+fake.poses = nil
+settings.data.body_follow = false
 game.clear_view_turn()
 hold("Grip", "right", true)
 fake.axis.right = { 1.0, 0 }
@@ -808,21 +835,23 @@ settings.data.laser_forward, settings.data.laser_up = 0, 0
 settings.data.laser = "inspect"
 
 -- Tap Y for the game's menu: Start for a moment, Y kept from the game.
+-- Y is read from the buttons UEVR sends the game (its direct reads of the
+-- face buttons came back false in the headset).
 settings.data.y_opens_menu = true
-hold("BButtonLeft", "left", true)
-tick(0.1)
 local yg = poll(XINPUT_GAMEPAD_Y)
+tick(0.1)
+yg = poll(XINPUT_GAMEPAD_Y)
 check(not has(yg, XINPUT_GAMEPAD_Y), "Y doesn't reach the game (no inspect)")
-hold("BButtonLeft", "left", false)
+tick(1 / 72)
+poll(0)
 tick(1 / 72)
 yg = poll()
 check(has(yg, XINPUT_GAMEPAD_START), "Y tap: Start sent (game menu)")
 tick(0.3)
 check(not has(poll(), XINPUT_GAMEPAD_START), "...only for a moment")
-hold("BButtonLeft", "left", true); tick(0.8); hold("BButtonLeft", "left", false); tick(1 / 72)
-check(not has(poll(), XINPUT_GAMEPAD_START), "Y held long: no menu")
-hold("BButtonLeft", "left", true); hold("BButtonRight", "right", true); tick(0.2)
-hold("BButtonLeft", "left", false); hold("BButtonRight", "right", false); tick(1 / 72)
+poll(XINPUT_GAMEPAD_Y); tick(0.8); poll(0); tick(1 / 72)
+check(not has(poll(), XINPUT_GAMEPAD_START), "Y held long (no polls in between): no menu")
+poll(XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_Y); tick(0.2); poll(0); tick(1 / 72)
 check(not has(poll(), XINPUT_GAMEPAD_START), "B + Y (recenter chord): no menu")
 tick(0.5)
 settings.data.y_opens_menu = false
@@ -1254,7 +1283,7 @@ poll(0)
 -- The C.A.T. rides in the right glove at its game socket while it's out.
 local attached_to = nil
 StructObject = StructObject or { new = function() return {} end }
-local cat_root2 = { AttachParent = arms_comp, AttachSocketName = "Bone_Palm_R_Tool",
+local cat_root2 = { AttachParent = arms_comp, AttachSocketName = "Socket_Hand_R",
                     get_address = function() return 0xCA7 end,
                     K2_AttachToComponent = function(self, parent, socket, a, b, c, d) attached_to = { parent, socket, a } end,
                     K2_GetComponentLocation = function() return { X = 0, Y = 0, Z = 0 } end,
@@ -1264,7 +1293,7 @@ local cat_root2 = { AttachParent = arms_comp, AttachSocketName = "Bone_Palm_R_To
 fake.objects["Class /Script/Routine.RoutineGameCAT"] = { Pointlight_InspectCAT = { Intensity = 0 }, RootComponent = cat_root2 }
 require("routine_vr.input").left_trigger = 255
 tick(0.2)
-check(attached_to and attached_to[1] == mh.mesh and attached_to[2] == "Bone_Palm_R_Tool" and mh.holding_cat,
+check(attached_to and attached_to[1] == mh.mesh and attached_to[2] == "Socket_Hand_R" and mh.holding_cat,
     "C.A.T. out: attached to the glove at the game's own socket")
 check(fake.mc_states[cat_root2] == nil, "...instead of hooked to the controller")
 require("routine_vr.input").left_trigger = 0
@@ -1371,13 +1400,16 @@ check(dist(fo, up) > 10.5, "out of reach: the upper arm lengthens to reach")
 
 -- Put away with motion hands: the C.A.T. hangs on the body's hip.
 local att3 = nil
-local cat_root3 = { AttachParent = arms_comp, AttachSocketName = "Bone_Palm_R_Tool",
+local cat_root3 = { AttachParent = arms_comp, AttachSocketName = "Socket_Hand_R",
                     get_address = function() return 0xCA8 end,
-                    K2_AttachToComponent = function(self, parent, socket, a) att3 = { parent, socket, a } end,
+                    K2_AttachToComponent = function(self, parent, socket, a, b, c) att3 = { parent, socket, a, c }; if c == 2 then self.RelativeScale3D = { X = 1, Y = 1, Z = 1 } end end,
                     K2_GetComponentLocation = function() return { X = 0, Y = 0, Z = 0 } end,
                     K2_GetComponentRotation = function() return { Pitch = 0, Yaw = 0, Roll = 0 } end,
                     K2_SetRelativeLocationAndRotation = function(self, l, r) self.rel = { l.X, l.Y, l.Z } end,
-                    RelativeLocation = { X = 0, Y = 0, Z = 0 }, RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 } }
+                    RelativeLocation = { X = 0, Y = 0, Z = 0 }, RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 },
+                    -- The game draws the C.A.T. scaled down for its first-person view.
+                    RelativeScale3D = { X = 0.6, Y = 0.6, Z = 0.6 },
+                    SetRelativeScale3D = function(self, v) self.RelativeScale3D = { X = v.X, Y = v.Y, Z = v.Z } end }
 fake.objects["Class /Script/Routine.RoutineGameCAT"] = { Pointlight_InspectCAT = { Intensity = 0 }, RootComponent = cat_root3 }
 settings.data.cat_holster = true
 settings.data.cat_holster_right = { rot = { 0, 0, 0 }, loc = { 4, 5, 6 } }
@@ -1385,14 +1417,36 @@ require("routine_vr.input").left_trigger = 0
 tick(0.2)
 check(att3 and att3[1] == body_comp and att3[2] == "Bone_Pelvis" and att3[3] == 2 and cat_root3.rel[2] == 5
     and mh.cat_place == "holster", "put away: the C.A.T. snaps to the body's pelvis at the hip offset")
+-- The offset is in the character's terms: turned 90 deg, "right" is world -X.
 require("routine_vr.input").left_trigger = 255
 tick(0.2)
-check(att3[1] == mh.mesh and att3[2] == "Bone_Palm_R_Tool" and mh.cat_place == "glove", "raised: from the hip into the glove")
+fake.pawn.K2_GetActorRotation = function() return { Pitch = 0, Yaw = 90, Roll = 0 } end
+require("routine_vr.input").left_trigger = 0
+tick(0.2)
+check(near(cat_root3.rel[1], -5) and near(cat_root3.rel[2], 4) and near(cat_root3.rel[3], 6),
+    "holster offset follows the character's facing (forward/right/up)")
+fake.pawn.K2_GetActorRotation = nil
+require("routine_vr.input").left_trigger = 255
+tick(0.2)
+check(att3[1] == mh.mesh and att3[2] == "Socket_Hand_R" and mh.cat_place == "glove", "raised: from the hip into the glove")
+check(not require("routine_vr.hands").is_attached("C.A.T.") and not require("routine_vr.game").cat_hooked,
+    "hip -> hand: the controller hook never takes the C.A.T. (it wrote the hip offset back over the glove's)")
+check(near(cat_root3.RelativeScale3D.X, 0.6) and att3[3] == 0, "hip -> hand: the C.A.T. keeps the game's scale (wasn't reset to 1 by the hip)")
+
+check(mh.mirror_n ~= nil and mh.mirror_c ~= nil,
+    "mirror frame learned with the hands (the left hold and grip need it)")
+-- The left glove gets the right glove's hold mirrored across the body,
+-- through the skeleton's right-side frame correction c.
+local ml, mr = mh.mirror_offset({ 1, 2, 3 }, { 0, 0, 0 }, { x = 0, y = 1, z = 0 }, { w = 1, x = 0, y = 0, z = 0 })
+check(near(ml[1], 1) and near(ml[2], -2) and near(ml[3], 3) and near(mr[1], 0) and near(mr[2], 0) and near(mr[3], 0),
+    "left glove offset: mirrored across the body")
+ml = mh.mirror_offset({ 1, 2, 3 }, { 0, 0, 0 }, { x = 0, y = 1, z = 0 }, { w = 0, x = 1, y = 0, z = 0 })
+check(near(ml[1], 1) and near(ml[2], 2) and near(ml[3], -3), "left glove offset: turned by the frame correction")
 
 -- Left-handed: everything to the other hands.
 settings.data.handedness = "left"
 tick(0.2)
-check(att3[1] == mh.mesh and att3[2] == "Bone_Palm_L_Tool", "left-handed: the C.A.T. moves to the left glove's matching socket")
+check(att3[1] == mh.mesh and att3[2] == "Bone_Arm_L_Palm" and mh.cat_place == "glove", "left-handed: the C.A.T. moves to the left palm (Socket_Hand_R has no left twin)")
 check(fake.mod_values.VR_AimMethod == "3", "left-handed: aim with the left controller")
 local lt_state = { Gamepad = { wButtons = 0, bLeftTrigger = 200, bRightTrigger = 0, sThumbLX = 0, sThumbLY = 0, sThumbRX = 0, sThumbRY = 0 } }
 callbacks.on_xinput_get_state(0, 0, lt_state)
@@ -1427,6 +1481,11 @@ ma[2].loc = { 5, 0, 0 }
 saved_json["routine_vr.json"] = { attachments = ma, attachments_layout = 2 }
 settings.load()
 check(settings.get("attachments")[2].loc[1] == 5, "migrated layout left alone after that")
+saved_json["routine_vr.json"] = { cat_holster_right = { rot = { 0, 0, 0 }, loc = { 0, 0, 0 } },
+                                  cat_holster_left = { rot = { 0, 0, 0 }, loc = { 3, 0, 0 } } }
+settings.load()
+check(settings.get("cat_holster_right").loc[2] == 22 and settings.get("cat_holster_left").loc[1] == 3,
+    "old zero holster offset takes the new hip default; a tuned one is kept")
 saved_json["routine_vr.json"] = { device = "quest_touch" }
 settings.load()
 check(settings.get("device") == "auto", "old saved Touch default moves to auto-detect")
