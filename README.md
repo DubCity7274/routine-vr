@@ -38,7 +38,8 @@ What it adds on top of plain UEVR:
 Not included (get them from their authors):
 
 - [UEVR](https://github.com/praydog/UEVR) (the nightly builds are used).
-- KeinZantezuken's **PPV/SML** pak mod from Nexus Mods (optional, removes
+- KeinZantezuken's **PPV/SML** pak mod,
+  [Visibility Tweaks on Nexus Mods](https://www.nexusmods.com/routine/mods/1) (optional, removes
   the fisheye, grain and sharpen effects; Routine VR drives its `rpp`
   console commands). Download its zip and pass it to the installer.
 
@@ -230,9 +231,9 @@ every half second, but it's still disorienting.
 
 ## Credits
 
-- The community UEVR profile for Routine showed the `CameraComponent`
-  attachment, the C.A.T. inspect swap, the cutscene detection, and the
-  meshes to hide. Its libraries (`uevr_utils` and friends) credit markmon,
+- Nero's community UEVR profile for Routine was the base this mod was
+  built from. It showed the `CameraComponent` attachment, the C.A.T.
+  inspect swap, the cutscene detection, and the meshes to hide. Its libraries (`uevr_utils` and friends) credit markmon,
   Pande4360, Rusty Gere and lobotomy.
 - KeinZantezuken's PPV/SML pak mod provides the `rpp` commands that switch
   off the fisheye, grain, and sharpen. The laser pointer uses the same
