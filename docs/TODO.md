@@ -5,6 +5,8 @@
 - **Black headset at startup** if a button was pressed before the main
   menu loaded. Not seen since 0.1.0-beta.1; may have been fixed by the
   input changes, or been a WiVRn/headset issue. Keep an eye out.
+- **Physical crouch** doesn't work: ducking never crouches the game, whatever
+  the settings (off by default; the game's crouch on left X works).
 - **Windows installer** (`install-windows.bat`, `tools/windows/*.ps1`) has
   never been run. Needs a test on a Windows PC.
 

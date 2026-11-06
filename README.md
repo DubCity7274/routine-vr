@@ -15,12 +15,12 @@ What it adds on top of plain UEVR:
 | Touch the C.A.T.'s buttons | Press its side buttons with your other index finger (the controller buzzes) |
 | Aim with your hand | `AimMethod = Right Controller` (left in left-handed mode); turning stays smooth with the C.A.T. out |
 | Left-handed mode | One checkbox swaps the C.A.T., aim, interact trigger, touch and grips |
-| Physical crouch | Duck in real life and the game crouches |
+| Physical crouch | Experimental, off by default: duck in real life and the game crouches (not working yet, see the to-do list) |
 | Game menu | Tap Y |
 | Recenter | Hold B + Y for 3 s (works in menus), or the panel button |
 | Cutscenes and menus | Pre-rendered cutscenes on a flat 2D screen, menus with plain aim; gameplay switches back automatically |
 | Headset auto-detect | The controller layout is picked from the headset UEVR finds: Quest Touch, Index, Pico, WMR, Vive wands |
-| Comfort | Fisheye lens, film grain, sharpen, vignette, motion blur, DoF, chromatic aberration and lens flares off (switchable; fisheye/grain/sharpen need the PPV pak mod) |
+| Comfort | Fisheye lens, film grain, vignette, motion blur, DoF, chromatic aberration and lens flares off; sharpen can go too (all switchable; fisheye/grain/sharpen need the PPV pak mod) |
 | Rendering | Native Stereo with UEVR's Native Stereo Fix, so the C.A.T.'s screen shows in both eyes |
 
 ## What's in this repo
@@ -146,10 +146,10 @@ The index finger follows the trigger, the other fingers the grip, the thumb
 the face buttons and thumbrest. If the gloves don't line up with your real
 hands, each has offset sliders in the **Motion hands** section.
 
-**Raising the C.A.T.:** hold the right grip. In the **C.A.T.** section the
-grip can be switched to press-to-toggle, **grip at your hip** (reach to your
-hip and grip to draw it; the controller buzzes when your hand is there) or
-off. The C.A.T. sits in your glove the way the game holds it.
+**Raising the C.A.T.:** reach to your right hip and grip to draw it, like a
+holster (the controller buzzes when your hand is there); it stays out while
+you hold the grip. In the **C.A.T.** section the grip can be switched to
+hold-anywhere, press-to-toggle or off. The C.A.T. sits in your glove the way the game holds it.
 
 **Hip holster:** put away, the C.A.T. hangs on your hip (so it's out of
 the way when crawling). Its position and angle have sliders in **Motion
@@ -186,7 +186,7 @@ the right, and the left trigger becomes interact.
 | Quest | Does |
 |---|---|
 | Right trigger | Interact / click (point with your right hand) |
-| Right grip | Raise the C.A.T. (hold; toggle or hip-draw in the panel) |
+| Right grip | At your hip: draw the C.A.T. (hold to keep it out; hold-anywhere or toggle in the panel) |
 | Left index finger | Press the C.A.T.'s side buttons by touching them |
 | Left trigger | Focus (the game's D-pad up) |
 | Left grip | Lean |
@@ -263,7 +263,7 @@ Any Lua 5.3+ works. On this machine:
 
 Beta. Written against UEVR nightly 01143's Lua API and Routine build
 22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
-offline tests cover the mod's logic (229). Not tested yet: other headsets
+offline tests cover the mod's logic (230). Not tested yet: other headsets
 (the layouts are there, but only Touch has been played) and the Windows
 installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 

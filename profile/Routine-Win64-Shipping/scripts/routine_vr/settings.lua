@@ -24,12 +24,12 @@ M.defaults = {
     physical_crouch = false,
     crouch_drop = 0.35,            -- metres below standing height that counts as crouched
     crouch_hysteresis = 0.07,      -- must rise this much back above the threshold to stand
-    crouch_button = "B",           -- gamepad button the game uses for crouch
+    crouch_button = "X",           -- gamepad button the game uses for crouch (UEVR maps left X to it)
     crouch_mode = "toggle",        -- "toggle" (tap on enter/leave) or "hold"
 
     -- Laser from the right hand: "inspect", "always" or "off" (laser.lua).
-    laser = "inspect",
-    laser_length = 100.0,          -- cm
+    laser = "off",
+    laser_length = 28.7,           -- cm
     -- Where the laser starts, so it runs through Routine's centre dot.
     -- Routine's interaction ray starts above the camera component;
     -- calibrated in the headset against a terminal.
@@ -47,7 +47,7 @@ M.defaults = {
     -- Camera effects removed for comfort (see effects.lua).
     remove_fisheye = true,
     remove_grain = true,
-    remove_sharpen = true,
+    remove_sharpen = false,        -- the game looks better with its sharpen kept
     remove_color_grading = true,
     remove_vignette = true,
 
@@ -70,7 +70,7 @@ M.defaults = {
 
     -- Right grip raises the C.A.T.: "hold", "toggle", "hip" (grip at your
     -- right hip to draw it, hold to keep it out) or "off". LT still works.
-    cat_grip = "hold",
+    cat_grip = "hip",
     lt_raises_cat = false,         -- the grip does it now; LT can be turned back on
     lt_focus = true,               -- the off-hand trigger sends Focus (D-pad up) instead
     handedness = "right",          -- "left" swaps the C.A.T./aim hand, touch, grips and triggers
@@ -90,14 +90,15 @@ M.defaults = {
     -- The character turns to follow your head past the dead zone (degrees),
     -- at up to body_follow_speed deg/s; the view itself never moves.
     body_follow = true,
-    body_follow_deadzone = 35.0,
-    body_follow_speed = 180.0,
+    body_follow_deadzone = 20.6,
+    body_follow_speed = 269.0,
     -- The put-away C.A.T. on the body's hip (with motion hands), per main
     -- hand: from the pelvis in the character's terms (forward/right/up cm,
     -- pitch/yaw/roll from facing forward; tuned in the panel).
     cat_holster = true,
-    cat_holster_right = { rot = { 0, 0, 0 }, loc = { 0, 22, -8 } },
-    cat_holster_left = { rot = { 0, 0, 0 }, loc = { 0, -22, -8 } },
+    -- Tuned in the headset: beside the hip, screen up like the game's own.
+    cat_holster_right = { rot = { -84.1, 0, 0 }, loc = { 13.5, 24.2, 5.9 } },
+    cat_holster_left = { rot = { -88.7, 0, 0 }, loc = { 9.7, -26.9, 13.9 } },
     holster_layout = 2,
     arm_ik = true,                 -- arms run from the body's shoulders to the hands
     -- Lined up in the headset by the user (Quest 3S).

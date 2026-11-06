@@ -196,7 +196,9 @@ local d = settings.defaults
 check(d.snap_turn == false and d.move_direction == "head" and d.physical_crouch == false,
     "defaults: smooth turn, head movement, physical crouch off")
 
-check(d.lt_raises_cat == false and d.cat_grip == "hold", "defaults: the grip raises the C.A.T., LT doesn't")
+check(d.lt_raises_cat == false and d.cat_grip == "hip", "defaults: the C.A.T. is drawn from the hip with the grip, LT doesn't raise it")
+check(d.crouch_button == "X" and d.remove_sharpen == false and d.laser == "off",
+    "defaults: crouch on X, the game's sharpen kept, laser off")
 check(d.device == "auto", "defaults: controller layout auto-detected")
 
 -- The behaviour tests below exercise the non-default options.
@@ -207,6 +209,9 @@ settings.data.y_opens_menu = false   -- the layout tests expect Y to reach the g
 settings.data.move_direction = "left_hand"
 settings.data.snap_turn = true
 settings.data.physical_crouch = true
+settings.data.crouch_button = "B"   -- the crouch tests watch B
+settings.data.remove_sharpen = true -- the effects test checks all three rpp commands
+settings.data.laser_length = 100.0  -- the laser tests measure a 1 m beam
 
 ---------------------------------------------------------------------------
 -- UEVR's own button mapping passes through (only the mod's edits change it)
@@ -1484,7 +1489,7 @@ check(settings.get("attachments")[2].loc[1] == 5, "migrated layout left alone af
 saved_json["routine_vr.json"] = { cat_holster_right = { rot = { 0, 0, 0 }, loc = { 0, 0, 0 } },
                                   cat_holster_left = { rot = { 0, 0, 0 }, loc = { 3, 0, 0 } } }
 settings.load()
-check(settings.get("cat_holster_right").loc[2] == 22 and settings.get("cat_holster_left").loc[1] == 3,
+check(settings.get("cat_holster_right").loc[2] == 24.2 and settings.get("cat_holster_left").loc[1] == 3,
     "old zero holster offset takes the new hip default; a tuned one is kept")
 saved_json["routine_vr.json"] = { device = "quest_touch" }
 settings.load()
