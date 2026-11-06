@@ -40,8 +40,3 @@
   C.A.T.'s buttons, instead of pointing the laser.
 - **Physical interaction**: doors, pickups and switches by hand (roadmap
   in DESIGN.md).
-
-## Before publishing
-
-- Wait for the original community profile author's OK.
-- Pick a license.

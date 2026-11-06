@@ -268,3 +268,8 @@ run found the menu-stick rotation and stereo flicker fixed above. Second
 run: Native Stereo is clean and buttons mostly work. Terminal cursors and
 hand attachments are still unverified. See
 [docs/DESIGN.md](docs/DESIGN.md#known-unknowns).
+
+## License
+
+MIT, see `LICENSE`. UEVR and the PPV/SML pak mod are separate projects under
+their own terms and are not included.
