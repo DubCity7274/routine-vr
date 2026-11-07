@@ -1230,6 +1230,23 @@ imgui.begin_window = real_begin
 ok, err = pcall(callbacks.on_script_reset)
 check(ok, "script reset runs: " .. tostring(err))
 
+-- UEVR's log on a launch where its frame tracking came up broken: the
+-- warning once a second. The panel then says to restart the game.
+local health = require("routine_vr.health")
+local real_read = health.read_new
+local W = "[warning] Something strange is going on, the vtable is already hooked, maybe previous frame was not rendered?\n"
+health.reset()
+health.read_new = function() return "[info] Cannot hook command with no vtable, falling back\n" end
+tick(6.0)
+check(not health.broken and health.status == "frame sync ok", "smooth launch (only the harmless fallback message): no warning")
+health.read_new = function() return W:rep(5) end
+tick(6.0)
+check(health.broken and health.warnings == 5, "warning once a second in UEVR's log: this launch is flagged for a restart")
+local hb_ok, hb_err = pcall(function() fake.drawing_ui = true callbacks.on_frame() fake.drawing_ui = false end)
+check(hb_ok, "panel shows the restart notice: " .. tostring(hb_err))
+health.read_new = real_read
+health.reset()
+
 local probe = require("routine_vr.probe")
 local probe_props = { { name = "bRaised", kind = "BoolProperty" } }
 local function fake_field(i)

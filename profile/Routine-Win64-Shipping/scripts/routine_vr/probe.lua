@@ -14,6 +14,7 @@ local touch = require("routine_vr.touch")
 local roomscale = require("routine_vr.roomscale")
 local motion_hands = require("routine_vr.motion_hands")
 local handed = require("routine_vr.handed")
+local health = require("routine_vr.health")
 
 local M = {}
 
@@ -156,7 +157,7 @@ local function components(label, actor)
 end
 
 local function flags()
-    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s hand=%s cat=%s@%s scale=%s hands=%s crouch=%s frame=%.1fms/worst %.1fms start=%.2f", input.left_trigger or 0,
+    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s hand=%s cat=%s@%s scale=%s hands=%s crouch=%s frame=%.1fms/worst %.1fms sync=%s start=%.2f", input.left_trigger or 0,
         tostring(game.raised), tostring(game.inspecting), tostring(touch.touching),
         touch.presses or 0, tostring(touch.last_error), tostring(input.diag.gate), tostring(input.diag.rb_in),
         tostring(input.diag.rb_out), tostring(input.diag.lt_out), tostring(input.diag.rx_out), tostring(input.diag.rgrip), tostring(input.diag.clear),
@@ -170,7 +171,7 @@ local function flags()
         tostring(touch.signature), handed.main(), tostring(motion_hands.cat_place), tostring(motion_hands.cat_where), tostring(motion_hands.cat_scale), motion_hands.hidden_by_game and "rehidden" or "ok",
         roomscale.standing_y and string.format("%s/head %.2f/stand %.2f/%s", roomscale.crouched and "down" or "up",
             roomscale.head_y or 0, roomscale.standing_y, tostring(roomscale.crouch_method)) or ("uncalibrated/" .. tostring(roomscale.status)),
-        M.frame_ms, M.worst_ms,
+        M.frame_ms, M.worst_ms, health.broken and ("broken/" .. health.warnings) or ("ok/" .. health.warnings),
         input.start_pulse or 0)
 end
 

@@ -17,6 +17,7 @@ local motion_hands = require("routine_vr.motion_hands")
 -- the script is first running (a require from on_frame fails).
 local VERSION = require("routine_vr.version")
 local touch = require("routine_vr.touch")
+local health = require("routine_vr.health")
 
 local M = {}
 
@@ -98,6 +99,10 @@ local function draw_top()
         .. "   |   C.A.T.: " .. (game.raised and "out" or "away")
         .. "   |   " .. (settings.get("handedness") == "left" and "left-handed" or "right-handed")
         .. string.format("   |   frame %.1f ms (worst %.1f)", probe.frame_ms or 0, probe.worst_ms or 0))
+    if health.broken then
+        imgui.text("!! Head tracking will be jittery this launch (UEVR's frame sync came up broken).")
+        imgui.text("!! Restart the game to fix it.")
+    end
     if imgui.button("Recenter + recalibrate now") then roomscale.recenter() end
     imgui.same_line()
     imgui.text(string.format("(or hold B + Y for %.0f s, menus too)", settings.get("recenter_hold")))

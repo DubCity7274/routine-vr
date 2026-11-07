@@ -2,9 +2,14 @@
 
 ## Bugs
 
-- **Jittery head tracking** now and then, cured only by restarting the
-  game. Cause unknown; the panel's top line and the recorder now show the
-  frame time to see whether the game is slowing down.
+- **Jittery head tracking** on some launches, cured only by a restart.
+  Cause found in UEVR's log: on those launches UEVR warns "the vtable is
+  already hooked, maybe previous frame was not rendered?" once a second
+  from the first frame (a smooth launch: never). Frame time is the same
+  (about 21 ms) either way. It's UEVR's frame tracking, not the mod; the
+  panel now says "restart the game" when it sees it. Next: try UEVR's
+  Reinitialize Runtime when it happens, and report it to UEVR with the
+  logs in ~/.local/share/routine-vr/logs.
 - **Recenter at start** doesn't reliably face you toward the splash
   screen: it recenters 4 s into the opening screens and again when the
   main menu first shows, but it still came out wrong. B + Y works.

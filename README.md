@@ -4,6 +4,8 @@ Room-scale, 6DoF VR for **ROUTINE** (Lunar Software, Unreal Engine 5.5), built o
 [UEVR](https://github.com/praydog/UEVR). Quest 3/3S first, with other headsets
 added as small layout files.
 
+![Routine VR in a Quest 3: the suit's gloves on your controllers, the C.A.T. held in the glove, pressing a door panel with your finger, pressing a C.A.T. button that switches the projector to JOUST, and picking a battery off a shelf](docs/media/demo.gif)
+
 What it adds on top of plain UEVR:
 
 | Feature | How |
@@ -95,6 +97,11 @@ Then:
    auto-calibrates). To recenter, hold B + Y for 3 seconds (both
    controllers buzz), or press **Recenter + recalibrate now** in the
    Routine VR panel.
+
+If head tracking is jittery for a whole session, restart the game. On
+some launches UEVR's frame tracking comes up broken (its log warns "maybe
+previous frame was not rendered?" once a second) and only a restart fixes
+it; the Routine VR panel's top line tells you when it sees this.
 
 Pre-rendered cutscenes play on a flat screen in front of you. That's normal
 for UEVR: videos aren't rendered in 3D.
@@ -278,7 +285,7 @@ Any Lua 5.3+ works. On this machine:
 
 Beta. Written against UEVR nightly 01143's Lua API and Routine build
 22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
-offline tests cover the mod's logic (247). Not tested yet: other headsets
+offline tests cover the mod's logic (250). Not tested yet: other headsets
 (the layouts are there, but only Touch has been played) and the Windows
 installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 
