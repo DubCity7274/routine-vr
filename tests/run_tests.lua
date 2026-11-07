@@ -1575,6 +1575,47 @@ check(near(ml[1], 1) and near(ml[2], -2) and near(ml[3], 3) and near(mr[1], 0) a
 ml = mh.mirror_offset({ 1, 2, 3 }, { 0, 0, 0 }, { x = 0, y = 1, z = 0 }, { w = 0, x = 1, y = 0, z = 0 })
 check(near(ml[1], 1) and near(ml[2], 2) and near(ml[3], -3), "left glove offset: turned by the frame correction")
 
+-- Thumbs curl when the thumb is on the stick or the thumbrest (one action,
+-- the binding files add the stick's touch sensor to it) or a face button.
+-- (In a function of its own: the main chunk is at Lua's 200-locals limit.)
+;(function()
+release_all()
+check(mh.curl_targets("left").Thumb == 0 and mh.curl_targets("right").Thumb == 0, "thumbs relaxed with nothing touched")
+hold("ThumbrestTouchLeft", "right", true) -- UEVR answered the left action under the other hand's query
+check(mh.curl_targets("left").Thumb == 1, "left thumb curls on its thumbrest/stick, whichever side UEVR reports it on")
+release_all()
+hold("ThumbrestTouchRight", "right", true)
+check(mh.curl_targets("right").Thumb == 1 and mh.curl_targets("left").Thumb == 0, "right thumb on its stick: only the right curls")
+release_all()
+hold("BButtonTouchLeft", "left", true)
+check(mh.curl_targets("left").Thumb == 1, "left thumb resting on Y: curls")
+release_all()
+-- A thumb pushing its stick is on it (UEVR has no stick-touch action).
+local im = require("routine_vr.input")
+im.stick.lx, im.stick.ly = 0, 20000
+check(mh.curl_targets("left").Thumb == 1 and mh.curl_targets("right").Thumb == 0, "left stick pushed: left thumb curls")
+im.stick.lx, im.stick.ly = 1500, 0
+check(mh.curl_targets("left").Thumb == 0, "stick barely off centre: no curl")
+im.stick.lx, im.stick.ly, im.stick.rx = 0, 0, -30000
+check(mh.curl_targets("right").Thumb == 1, "right stick pushed: right thumb curls")
+im.stick.rx = 0
+-- The left source handle failing to read must not hide the right one.
+local vrp = uevr.params.vr
+local real_active, real_left = vrp.is_action_active, vrp.get_left_joystick_source
+vrp.get_left_joystick_source = function() return nil end
+vrp.is_action_active = function(h, src)
+    if src == nil then error("bad argument #2 (userdata expected, got nil)") end
+    return real_active(h, src)
+end
+im.reset()
+hold("ThumbrestTouchRight", "right", true)
+check(mh.curl_targets("right").Thumb == 1 and im.read_errors.left ~= nil,
+    "a left-hand read that errors doesn't stop the right thumb (error kept for the panel)")
+vrp.is_action_active, vrp.get_left_joystick_source = real_active, real_left
+im.reset()
+release_all()
+end)()
+
 -- Left-handed: everything to the other hands.
 settings.data.handedness = "left"
 tick(0.2)

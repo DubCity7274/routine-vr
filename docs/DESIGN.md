@@ -584,3 +584,18 @@ the view holds still. Off while the right stick is in use and during a
 C.A.T. handover. Confirmed in the headset: the new ID card shows on the
 chest; standing, the holster felt right at 0.27 m (now the default).
 
+
+## Thumbs, and the left-hand reads
+
+- UEVR has no thumbstick-touch action. Binding stick touch onto the
+  thumbrest-touch actions (via `_interaction_profiles_*.json` overrides)
+  worked but turned on UEVR's D-pad shifting (right thumbrest + left stick
+  = D-pad), so the left stick stopped moving you. Removed; the installer
+  deletes those files. A thumb now counts as down when its stick is pushed,
+  or on the thumbrest or a face button (touch or press).
+- Every left-hand action read was the right controller's: input.lua's
+  `source()` used `hand == "left" and left() or right()`, and under OpenXR
+  UEVR numbers the left hand 0, which reaches Lua as nil, so it fell
+  through to the right source. Fixed (also in the touch and hip haptics).
+  Hand-specific actions are read from both sides, each in its own pcall;
+  errors and the source handles show under Advanced -> Input check.

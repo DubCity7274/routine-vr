@@ -27,6 +27,18 @@ if [ ! -f "$dest/.routine-vr-installed" ]; then
     fi
 fi
 
+# Test builds before 0.1.0-beta.5 shipped UEVR binding files that put stick touch
+# on the thumbrest action, which turned on UEVR's D-pad shifting: take them
+# out again (and put back any the player had).
+for b in "$dest"/_interaction_profiles_*.json; do
+    [ -f "$b" ] || continue
+    if grep -q '"_routine_vr"' "$b"; then rm -f "$b"; echo "Removed old binding file $(basename "$b")."; fi
+done
+for b in "$dest"/_interaction_profiles_*.json.pre-routine-vr; do
+    [ -f "$b" ] || continue
+    mv "$b" "${b%.pre-routine-vr}"
+done
+
 rsync -a --exclude config.txt "$src/" "$dest/"
 
 if [ -f "$dest/config.txt" ]; then

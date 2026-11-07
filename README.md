@@ -162,7 +162,7 @@ Settings are saved in `<profile>/data/routine_vr.json`.
 **Motion hands** (on by default): the game's spacesuit arms follow your
 controllers, running from the body's shoulders, so you see your own arms.
 The index finger follows the trigger, the other fingers the grip, the thumb
-the face buttons and thumbrest. If the gloves don't line up with your real
+curls when it's on the thumbrest or a face button, or pushing its stick. If the gloves don't line up with your real
 hands, each has offset sliders under **Hands and body** → Glove alignment.
 
 **Raising the C.A.T.:** reach to your right hip and grip to draw it, like a
@@ -285,7 +285,7 @@ Any Lua 5.3+ works. On this machine:
 
 Beta. Written against UEVR nightly 01143's Lua API and Routine build
 22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
-offline tests cover the mod's logic (250). Not tested yet: other headsets
+offline tests cover the mod's logic (258). Not tested yet: other headsets
 (the layouts are there, but only Touch has been played) and the Windows
 installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 

@@ -15,6 +15,14 @@ if (Test-Path $ProfileDest) {
     $scripts = Join-Path $ProfileDest 'scripts'
     if ((Test-Path $scripts) -and -not (Get-ChildItem $scripts)) { Remove-Item $scripts }
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $ProfileDest 'user_script.txt')
+    # The mod's UEVR binding files; any the player had before come back.
+    Get-ChildItem -Path $ProfileDest -Filter '_interaction_profiles_*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        if (Select-String -Path $_.FullName -Pattern '"_routine_vr"' -Quiet) { Remove-Item -Force $_.FullName }
+    }
+    Get-ChildItem -Path $ProfileDest -Filter '_interaction_profiles_*.json.pre-routine-vr' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        Move-Item -Force $_.FullName ($_.FullName -replace '\.pre-routine-vr$', '')
+        Write-Host "Restored your $($_.BaseName)."
+    }
 
     $marker = Join-Path $ProfileDest '.routine-vr-installed'
     $config = Join-Path $ProfileDest 'config.txt'

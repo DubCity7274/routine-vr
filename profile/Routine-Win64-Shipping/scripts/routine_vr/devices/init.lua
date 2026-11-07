@@ -30,14 +30,24 @@ M.inputs = {
     trigger_r      = { action = P .. "Trigger",            hand = "right" },
     grip_l         = { action = P .. "Grip",               hand = "left"  },
     grip_r         = { action = P .. "Grip",               hand = "right" },
-    a_l            = { action = P .. "AButtonLeft",        hand = "left"  },
-    b_l            = { action = P .. "BButtonLeft",        hand = "left"  },
-    a_r            = { action = P .. "AButtonRight",       hand = "right" },
-    b_r            = { action = P .. "BButtonRight",       hand = "right" },
+    a_l            = { action = P .. "AButtonLeft",        hand = "left",  either = true },
+    b_l            = { action = P .. "BButtonLeft",        hand = "left",  either = true },
+    a_r            = { action = P .. "AButtonRight",       hand = "right", either = true },
+    b_r            = { action = P .. "BButtonRight",       hand = "right", either = true },
     stick_click_l  = { action = P .. "JoystickClick",      hand = "left"  },
     stick_click_r  = { action = P .. "JoystickClick",      hand = "right" },
-    thumbrest_l    = { action = P .. "ThumbrestTouchLeft", hand = "left"  },
-    thumbrest_r    = { action = P .. "ThumbrestTouchRight",hand = "right" },
+    -- Thumb on the thumbrest, or on the stick: the mod's binding files
+    -- (profile root, _interaction_profiles_*.json) add each stick's touch
+    -- sensor to these actions, since UEVR has no stick-touch action.
+    -- Actions that only exist on one hand are read from both sides
+    -- (either = true): UEVR's per-hand read gave the wrong hand for the
+    -- left (the left thumb never curled).
+    thumbrest_l    = { action = P .. "ThumbrestTouchLeft", hand = "left",  either = true },
+    thumbrest_r    = { action = P .. "ThumbrestTouchRight",hand = "right", either = true },
+    a_touch_l      = { action = P .. "AButtonTouchLeft",   hand = "left",  either = true },
+    b_touch_l      = { action = P .. "BButtonTouchLeft",   hand = "left",  either = true },
+    a_touch_r      = { action = P .. "AButtonTouchRight",  hand = "right", either = true },
+    b_touch_r      = { action = P .. "BButtonTouchRight",  hand = "right", either = true },
     system         = { action = P .. "SystemButton" },
 
     pad_up_l       = { action = P .. "JoystickClick", hand = "left",  dir = "up"    },

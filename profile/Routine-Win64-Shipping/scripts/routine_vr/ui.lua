@@ -386,6 +386,9 @@ local function draw_advanced()
             d.rb_in and "on" or "off", d.rb_out and "on" or "off", d.lt_out or 0, d.rx_out or 0))
         imgui.text("Left stick right now: " .. (movement.in_menu and "menu (raw stick)" or "gameplay"))
         imgui.text("Snap turn right now: " .. (movement.snap_turn_active() and "on" or "off"))
+        imgui.text("Controller reads: " .. input.source_text())
+        local td = motion_hands.thumb_down or {}
+        imgui.text("Thumbs down: left " .. tostring(td.left) .. ", right " .. tostring(td.right))
     end)
     expander("Body scan", function()
         if imgui.button("Scan body") then body.scan() end

@@ -58,7 +58,8 @@ function M.tick(delta)
     M.at_hip = M.distance ~= nil and M.distance <= settings.get("hip_radius")
     if M.at_hip and not was and settings.get("cat_grip") == "hip" then
         pcall(function()
-            local src = handed.is_left() and vr.get_left_joystick_source() or vr.get_right_joystick_source()
+            local src -- (not "a and b or c": the left source can be nil)
+            if handed.is_left() then src = vr.get_left_joystick_source() else src = vr.get_right_joystick_source() end
             vr.trigger_haptic_vibration(0.0, 0.03, 1.0, 0.3, src)
         end)
     end

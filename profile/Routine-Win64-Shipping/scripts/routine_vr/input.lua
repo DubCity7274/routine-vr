@@ -54,6 +54,7 @@ M.start_pulse = 0.0           -- seconds left of a Start press sent for a Y tap
 M.swap_triggers = false       -- left-handed: left index interacts (RT), right trigger is the off one
 M.focus = false               -- the off-hand trigger sends Focus (D-pad up; game.lua)
 M.xi_in = 0                   -- buttons UEVR sent in the last poll, before any edits
+M.stick = { lx = 0, ly = 0, rx = 0, ry = 0 } -- sticks as UEVR sent them (-32768..32767)
 M.xi_seen = 0                 -- every button UEVR sent in any poll since the last take_seen()
 M.polls = 0                   -- XInput polls so far
 M.right_grip = false          -- right grip as read on the engine tick (game.lua), for raising the C.A.T.
@@ -107,10 +108,18 @@ local function action_handle(path)
 end
 
 local function source(hand)
-    -- Re-query until valid; handles are 0 before the runtime finishes init.
+    -- Asked every time: under OpenXR UEVR numbers the left hand 0, which
+    -- reaches Lua as nil. (This used to be "hand == 'left' and left() or
+    -- right()", which fell through to the right hand on that nil: every
+    -- left read was the right controller's, so the left thumb never curled
+    -- and the left grip once read held while only the right was.)
     local s = sources[hand]
     if s == nil or s == 0 then
-        s = hand == "left" and vr.get_left_joystick_source() or vr.get_right_joystick_source()
+        if hand == "left" then
+            s = vr.get_left_joystick_source()
+        else
+            s = vr.get_right_joystick_source()
+        end
         sources[hand] = s
     end
     return s
@@ -128,6 +137,31 @@ local function quadrant(hand, dir)
     return (dir == "right" and x > 0) or (dir == "left" and x < 0)
 end
 
+-- What each side's source handle is and the last error reading through it
+-- (panel: Advanced -> Input check; recorder), for the left thumb that
+-- never curled.
+M.read_errors = { left = nil, right = nil }
+M.read_ok = { left = 0, right = 0 }
+
+local function read_active(h, hand)
+    local ok, v = pcall(vr.is_action_active, h, source(hand))
+    if not ok then
+        M.read_errors[hand] = tostring(v)
+        return false
+    end
+    M.read_ok[hand] = M.read_ok[hand] + 1
+    return v == true
+end
+
+function M.source_text()
+    local function one(hand)
+        local ok, s = pcall(source, hand)
+        return hand .. "=" .. (ok and tostring(s) or "error") .. " ok " .. M.read_ok[hand]
+            .. (M.read_errors[hand] and (" err " .. M.read_errors[hand]:sub(1, 60)) or "")
+    end
+    return one("left") .. " | " .. one("right")
+end
+
 -- Is a physical input (by name from devices.inputs) held right now?
 function M.is_held(name)
     local def = devices.inputs[name]
@@ -137,10 +171,13 @@ function M.is_held(name)
     if h == nil or h == 0 then return false end
 
     local active
-    if def.hand == nil then
-        active = vr.is_action_active(h, source("left")) or vr.is_action_active(h, source("right"))
+    if def.hand == nil or def.either then
+        -- Each side on its own: an error reading one (the left source has
+        -- come back as nothing under OpenXR, where UEVR numbers it 0) must
+        -- not hide the other.
+        active = read_active(h, "left") or read_active(h, "right")
     else
-        active = vr.is_action_active(h, source(def.hand))
+        active = read_active(h, def.hand)
     end
 
     if active and def.dir ~= nil then
@@ -273,6 +310,10 @@ function M.apply(state)
     M.diag.gate = (vr.is_runtime_ready() and "ready" or "not ready") .. ", "
         .. (vr.is_using_controllers() and "using controllers" or "NOT using controllers")
     M.xi_in = state.Gamepad.wButtons
+    -- The sticks as UEVR sent them, before any edits: a thumb moving a
+    -- stick is on it (thumb curl, motion_hands.lua).
+    M.stick.lx, M.stick.ly = state.Gamepad.sThumbLX or 0, state.Gamepad.sThumbLY or 0
+    M.stick.rx, M.stick.ry = state.Gamepad.sThumbRX or 0, state.Gamepad.sThumbRY or 0
     M.xi_seen = M.xi_seen | M.xi_in
     M.polls = M.polls + 1
     M.apply_mapping(state)

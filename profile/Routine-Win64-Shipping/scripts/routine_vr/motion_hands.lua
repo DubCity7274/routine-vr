@@ -744,6 +744,8 @@ end
 -- on the grip, the thumb when it rests on the buttons or thumbrest. The
 -- grips and triggers come from what UEVR sends (LB/RB, analog triggers),
 -- the thumb from UEVR's direct reads.
+local STICK_THUMB = 0.12 * 32767   -- stick pushed this far: the thumb is on it
+
 local function curl_targets(side)
     local bits = input.xi_in or 0
     -- (Not "a and b or c": with the left grip released that fell through to
@@ -755,15 +757,28 @@ local function curl_targets(side)
         grip = bits & XINPUT_GAMEPAD_RIGHT_SHOULDER ~= 0
     end
     local trig = (side == "left" and input.left_trigger or input.right_trigger) or 0
+    -- Thumb down: on the stick or the thumbrest (one action, see
+    -- devices/init.lua), or touching/pressing a face button.
     local h = side == "left" and "l" or "r"
     local thumb = false
-    for _, n in ipairs({ "thumbrest_" .. h, "a_" .. h, "b_" .. h }) do
+    for _, n in ipairs({ "thumbrest_" .. h, "a_touch_" .. h, "b_touch_" .. h, "a_" .. h, "b_" .. h }) do
         local ok, v = pcall(input.is_held, n)
         if ok and v then thumb = true end
     end
+    -- A thumb pushing its stick is on it. (UEVR has no stick-touch action;
+    -- carrying stick touch on the thumbrest action turned on UEVR's D-pad
+    -- shifting, which stopped the left stick moving you.)
+    local st = input.stick or {}
+    local x = side == "left" and (st.lx or 0) or (st.rx or 0)
+    local y = side == "left" and (st.ly or 0) or (st.ry or 0)
+    if x * x + y * y > STICK_THUMB * STICK_THUMB then thumb = true end
+    M.thumb_down = M.thumb_down or {}
+    M.thumb_down[side] = thumb
     local g = grip and 1 or 0
     return { Thumb = thumb and 1 or 0, Finger_A = trig / 255, Finger_B = g, Finger_C = g, Finger_D = g }
 end
+
+M.curl_targets = curl_targets -- for tests
 
 local function axis_quat(axis, deg)
     local h = math.rad(deg) / 2

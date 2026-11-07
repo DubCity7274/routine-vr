@@ -127,7 +127,8 @@ end
 local function buzz()
     pcall(function()
         local vr = uevr.params.vr
-        local src = handed.off() == "left" and vr.get_left_joystick_source() or vr.get_right_joystick_source()
+        local src -- (not "a and b or c": the left source can be nil)
+            if handed.off() == "left" then src = vr.get_left_joystick_source() else src = vr.get_right_joystick_source() end
         vr.trigger_haptic_vibration(0.0, 0.05, 1.0, 0.6, src)
     end)
 end

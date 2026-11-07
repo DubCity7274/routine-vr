@@ -17,6 +17,16 @@ dest="$(profile_dir "$compat")"
 rm -rf "$dest/scripts/routine_vr" "$dest/scripts/routine_vr.lua"
 rmdir "$dest/scripts" 2>/dev/null || true
 rm -f "$dest/user_script.txt"
+# The mod's UEVR binding files; any the player had before come back.
+for b in "$dest"/_interaction_profiles_*.json; do
+    [ -f "$b" ] || continue
+    if grep -q '"_routine_vr"' "$b"; then rm -f "$b"; fi
+done
+for b in "$dest"/_interaction_profiles_*.json.pre-routine-vr; do
+    [ -f "$b" ] || continue
+    mv "$b" "${b%.pre-routine-vr}"
+    echo "Restored your $(basename "${b%.pre-routine-vr}")."
+done
 
 marker="$dest/.routine-vr-installed"
 if [ -f "$dest/config.txt.pre-routine-vr" ]; then
