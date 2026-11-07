@@ -20,11 +20,14 @@ M.defaults = {
     -- Physical crouch: duck in real life -> press the game's crouch button.
     -- Measured as a drop from the calibrated standing head height, so it works
     -- the same in OpenVR standing space and OpenXR LOCAL/STAGE space.
-    -- Off by default: calibration can land on a bad height (0.00 m seen).
-    physical_crouch = false,
-    crouch_drop = 0.35,            -- metres below standing height that counts as crouched
+    -- On by default since it presses the right button (B).
+    physical_crouch = true,
+    crouch_drop = 0.25,            -- metres below standing height that counts as crouched
     crouch_hysteresis = 0.07,      -- must rise this much back above the threshold to stand
-    crouch_button = "X",           -- gamepad button the game uses for crouch (UEVR maps left X to it)
+    -- Gamepad button the game crouches on: B. UEVR sends your left X to the
+    -- game as B (seen in a recording), so "X" never crouched.
+    crouch_button = "B",
+    crouch_layout = 3,
     crouch_mode = "toggle",        -- "toggle" (tap on enter/leave) or "hold"
 
     -- Laser from the right hand: "inspect", "always" or "off" (laser.lua).
@@ -72,7 +75,7 @@ M.defaults = {
     -- right hip to draw it, hold to keep it out) or "off". LT still works.
     cat_grip = "hip",
     lt_raises_cat = false,         -- the grip does it now; LT can be turned back on
-    lt_focus = true,               -- the off-hand trigger sends Focus (D-pad up) instead
+    lt_focus = true,               -- the off-hand trigger sends Focus (D-pad up) when lean isn't on it
     handedness = "right",          -- "left" swaps the C.A.T./aim hand, touch, grips and triggers
     y_opens_menu = true,           -- tap Y for the game's menu (Start); Y no longer inspects
     -- The hip holster, from the headset (metres): below, to the right, behind.
@@ -80,8 +83,11 @@ M.defaults = {
     hip_side = 0.20,
     hip_back = 0.05,
     hip_radius = 0.27,             -- tuned standing (0.36 felt right seated)
-    -- Lean (RB) on the left grip in gameplay; Routine has no use for LB.
-    lean_left_grip = true,
+    -- Lean (RB) in gameplay: "trigger" (the off hand's trigger), "grip" (the
+    -- off hand's grip) or "off". Not the grip by default: it's easy to hold
+    -- it without meaning to (curling the hand to press the C.A.T.'s
+    -- buttons), and that stopped you and leaned.
+    lean_button = "trigger",
     -- Motion hands from the game's spacesuit arms (motion_hands.lua), with
     -- each palm's offset from its controller (UE terms: pitch/yaw/roll,
     -- forward/right/up cm), tuned in the panel.
@@ -123,6 +129,7 @@ M.defaults = {
     cat_turn_reverse = false,      -- flip it if pushing right turns you left
     -- Hold right B + left Y this long (s) to recenter the view.
     recenter_hold = 3.0,
+    recenter_on_start = true,      -- recenter once when the game's first screen shows
 }
 
 local function deep_copy(t)
@@ -173,6 +180,17 @@ function M.migrate(data, loaded)
             data.cat_inspect = { hand = "left", rot = { 0, -90, 0 }, loc = { 0, 0, 0 } }
         end
     end
+
+    -- Crouch layout 1 could save "X", which the game doesn't crouch on.
+    -- Layout 2: physical crouch never worked before, so it was saved off;
+    -- it comes on now that it does.
+    local cl = type(loaded.crouch_layout) == "number" and loaded.crouch_layout or 1
+    if cl < 2 then
+        if data.crouch_button == "X" then data.crouch_button = "B" end
+        if data.crouch_drop == 0.35 then data.crouch_drop = 0.25 end
+    end
+    if cl < 3 then data.physical_crouch = true end
+    data.crouch_layout = 3
 
     -- Holster layout 1 measured the offset in the pelvis bone's own axes,
     -- and its zero default hid the C.A.T. inside the hips. Untouched zero

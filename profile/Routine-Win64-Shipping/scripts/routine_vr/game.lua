@@ -59,6 +59,11 @@ M.inspecting = false
 M.raised = false
 M.cat_on_glove = false
 M.cat_hooked = false
+-- Body follow state (update_body_follow), declared here because
+-- refresh_hands, further up, resets it.
+local follow_last = nil
+local follow_pending = 0.0
+local follow_pause = 0.0
 M.cat_managed = false        -- motion hands place the C.A.T. (glove/hip/home), not the controller hook
 
 local classes = {}
@@ -80,14 +85,52 @@ local function first_of(key)
     return UEVR_UObjectHook.get_first_object_by_class(c, false)
 end
 
+-- A cutscene video is on screen. The game can keep the video widget
+-- alive after the video ends (seen after loading a save or starting a new
+-- game), so a widget merely existing left the mod stuck in cutscene mode:
+-- flat screen, default controls. Only a widget in the viewport and visible
+-- counts; one that can't be asked counts as playing, as before.
+local function widget_showing(w)
+    local ok_v, in_view = pcall(function() return w:IsInViewport() end)
+    if ok_v and in_view == false then
+        -- Not on the viewport itself: still showing if it's inside another
+        -- widget (removing it from the screen clears both).
+        local ok_p, parent = pcall(function() return w:GetParent() end)
+        if not ok_p or parent == nil then return false end
+    end
+    local ok_s, visible = pcall(function() return w:IsVisible() end)
+    if ok_s and visible == false then return false end
+    return true
+end
+
+local function cine_playing()
+    local c = class("cine_video")
+    if c == nil then return false end
+    local ok, all = pcall(function() return UEVR_UObjectHook.get_objects_by_class(c, false) end)
+    if ok and type(all) == "table" then
+        for _, w in ipairs(all) do
+            if w ~= nil and widget_showing(w) then return true end
+        end
+        return false
+    end
+    local w = first_of("cine_video")
+    return w ~= nil and widget_showing(w)
+end
+
+M.main_menu = false     -- the game's main menu is up (roomscale.lua recenters on it)
+
 local function detect_mode()
+    M.main_menu = false
     local pawn = api:get_local_pawn(0)
     if pawn == nil then return "menu" end
 
     local ok, name = pcall(function() return pawn:get_full_name() end)
-    if ok and type(name) == "string" and name:find("Menu_Main", 1, true) then return "menu" end
+    if ok and type(name) == "string" and name:find("Menu_Main", 1, true) then
+        M.main_menu = true
+        return "menu"
+    end
 
-    if first_of("cine_video") ~= nil then return "cutscene" end
+    if cine_playing() then return "cutscene" end
     return "game"
 end
 
@@ -238,6 +281,7 @@ end
 function M.refresh_hands()
     applied_hands = nil
     M.follow_active, follow_last = false, nil
+    follow_pending = 0.0
 end
 
 local OFFSETS = { "VR_CameraForwardOffset", "VR_CameraRightOffset", "VR_CameraUpOffset" }
@@ -320,11 +364,10 @@ local function update_grip()
     input.force_lt = M.grip_raise
     input.clear_rb = M.mode == "game" and mode ~= "off"
     input.block_lt = M.mode == "game" and not settings.get("lt_raises_cat")
-    input.focus = input.block_lt and settings.get("lt_focus")
+    local lean = settings.get("lean_button")
+    input.lean = (M.mode == "game" and (lean == "trigger" or lean == "grip")) and lean or nil
+    input.focus = input.block_lt and settings.get("lt_focus") and lean ~= "trigger"
     input.swap_triggers = M.mode == "game" and handed.is_left()
-    -- Left-handed, the off hand is the right one and its grip is already
-    -- lean (RB) as UEVR maps it.
-    input.lean_left_grip = M.mode == "game" and settings.get("lean_left_grip") and not handed.is_left()
 end
 
 -- With the C.A.T. out, Routine's aim mode filters right-stick turning
@@ -485,7 +528,6 @@ local hmd_pos = UEVR_Vector3f.new()
 local hmd_rot = UEVR_Quaternionf.new()
 local follow_q = nil
 M.follow_active = false
-local follow_last = nil
 
 -- How far the head is turned from the character's facing, in degrees
 -- (UE sense, right positive), or nil.
@@ -503,10 +545,31 @@ function M.head_yaw()
     return ok and yaw or nil
 end
 
+-- Turns body follow asked for that the view hasn't taken back yet. The
+-- view only ever undoes these: undoing every change of the character's
+-- facing also undid the game's own turns (onto a ladder, while leaning),
+-- which pushed the head past the dead zone again and spun you around.
+local LEAN_PAUSE = 0.5          -- s of no body follow after a lean ends
+-- CharacterMovement modes the game drives itself (ladders): flying, custom.
+local GAME_MOVED = { [5] = true, [6] = true }
+
+local function game_moving_pawn()
+    local pawn = api:get_local_pawn(0)
+    if pawn == nil then return false end
+    local ok, mode = pcall(function() return pawn.CharacterMovement.MovementMode end)
+    return ok and GAME_MOVED[mode] == true
+end
+
 local function update_body_follow(delta)
     M.follow_active = false
-    if not settings.get("body_follow") or M.mode ~= "game" or handover ~= nil then return end
-    if math.abs(input.right_stick_x() or 0) > TURN_DEADZONE then return end
+    follow_pause = math.max(0, follow_pause - delta)
+    if input.diag.rb_out then follow_pause = LEAN_PAUSE end -- leaning
+    if not settings.get("body_follow") or M.mode ~= "game" or handover ~= nil
+        or follow_pause > 0 or math.abs(input.right_stick_x() or 0) > TURN_DEADZONE
+        or game_moving_pawn() then
+        follow_pending = 0.0
+        return
+    end
     local rel = M.head_yaw()
     if rel == nil then return end
     M.follow_active = true
@@ -514,7 +577,11 @@ local function update_body_follow(delta)
     if math.abs(rel) <= dz then return end
     local excess = rel - (rel > 0 and dz or -dz)
     local max = settings.get("body_follow_speed") * delta
-    pcall(turn_body, math.max(-max, math.min(max, excess)))
+    local step = math.max(-max, math.min(max, excess))
+    if pcall(turn_body, step) then
+        -- Never more than a few frames' worth outstanding.
+        follow_pending = math.max(-3 * max, math.min(3 * max, follow_pending + step))
+    end
 end
 
 function M.on_stereo_view(view_index)
@@ -522,9 +589,17 @@ function M.on_stereo_view(view_index)
     -- Body follow: undo, on the view, whatever the character turned.
     local y = view_yaw()
     if y ~= nil then
-        if M.follow_active and follow_last ~= nil then
+        if follow_pending ~= 0 and follow_last ~= nil then
+            -- Only the part of the change that body follow asked for.
             local d = yaw_diff(y, follow_last)
-            if d ~= 0 then pcall(turn_view, -d) end
+            local c = 0
+            if d * follow_pending > 0 then
+                c = math.abs(d) < math.abs(follow_pending) and d or follow_pending
+            end
+            if c ~= 0 then
+                pcall(turn_view, -c)
+                follow_pending = follow_pending - c
+            end
         end
         follow_last = y
     end
@@ -757,7 +832,8 @@ function M.reset()
     grip_was, grip_toggled, grip_drawn = false, false, false
     hip.reset()
     M.reset_turn_check()
-    input.force_lt, input.clear_rb, input.lean_left_grip, input.block_turn = false, false, false, false
+    input.force_lt, input.clear_rb, input.block_turn = false, false, false
+    input.lean = nil
     input.block_lt = false
     input.y_to_menu, input.start_pulse = false, 0.0
     input.focus, input.swap_triggers = false, false

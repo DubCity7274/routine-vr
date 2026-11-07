@@ -193,18 +193,18 @@ end
 check(fake.mod_values.VR_ControllerPitchOffset == "0.000000", "quest layout pushes its UEVR overrides")
 
 local d = settings.defaults
-check(d.snap_turn == false and d.move_direction == "head" and d.physical_crouch == false,
-    "defaults: smooth turn, head movement, physical crouch off")
+check(d.snap_turn == false and d.move_direction == "head" and d.physical_crouch == true,
+    "defaults: smooth turn, head movement, physical crouch on")
 
 check(d.lt_raises_cat == false and d.cat_grip == "hip", "defaults: the C.A.T. is drawn from the hip with the grip, LT doesn't raise it")
-check(d.crouch_button == "X" and d.remove_sharpen == false and d.laser == "off",
-    "defaults: crouch on X, the game's sharpen kept, laser off")
+check(d.crouch_button == "B" and d.crouch_drop == 0.25 and d.remove_sharpen == false and d.laser == "off",
+    "defaults: crouch on B (UEVR sends left X as B), 25 cm duck, the game's sharpen kept, laser off")
 check(d.device == "auto", "defaults: controller layout auto-detected")
 
 -- The behaviour tests below exercise the non-default options.
 settings.data.lt_raises_cat = true -- many tests raise the C.A.T. with LT (off by default)
 settings.data.cat_grip = "off"   -- layout tests expect the grips as LB/RB; grip-raise and
-settings.data.lean_left_grip = false -- left-grip lean have their own tests
+settings.data.lean_button = "off"     -- lean has its own tests
 settings.data.y_opens_menu = false   -- the layout tests expect Y to reach the game
 settings.data.move_direction = "left_hand"
 settings.data.snap_turn = true
@@ -356,6 +356,48 @@ tick(0.1)
 check(not has(poll(), XINPUT_GAMEPAD_B), "hold mode releases when standing")
 settings.data.crouch_mode = "toggle"
 
+-- The game's own crouch: the pawn's Crouch()/UnCrouch() (Routine crouches
+-- the standard Unreal way), no button pressed.
+roomscale.reset()
+local cpawn = { bIsCrouched = false, get_address = function() return 0x1001 end,
+                K2_GetComponentsByClass = function() return {} end }
+function cpawn:Crouch() self.bIsCrouched = true end
+function cpawn:UnCrouch() self.bIsCrouched = false end
+fake.pawn = cpawn
+fake.head_y = 1.70
+tick(3.5)
+fake.head_y = 1.25
+local pressed = 0
+for _ = 1, 72 do
+    callbacks.on_pre_engine_tick(nil, 1 / 72)
+    if has(poll(), XINPUT_GAMEPAD_B) then pressed = pressed + 1 end
+end
+check(cpawn.bIsCrouched and pressed == 0 and roomscale.crouch_method == "game crouch",
+    "ducking crouches through the game's own Crouch(), no button")
+fake.head_y = 1.70
+tick(0.5)
+check(not cpawn.bIsCrouched, "standing up uncrouches the same way")
+-- A Crouch() that does nothing: the button takes over.
+roomscale.reset()
+function cpawn:Crouch() end
+function cpawn:UnCrouch() end
+cpawn.bIsCrouched = false
+tick(3.5)
+fake.head_y = 1.25
+local taps_after = 0
+local prev_b = false
+for _ = 1, 144 do
+    callbacks.on_pre_engine_tick(nil, 1 / 72)
+    local down = has(poll(), XINPUT_GAMEPAD_B)
+    if down and not prev_b then taps_after = taps_after + 1 end
+    prev_b = down
+end
+check(taps_after >= 1 and roomscale.crouch_method:find("button", 1, true),
+    "game crouch has no effect: falls back to the crouch button")
+fake.head_y = 1.70
+tick(1.0)
+fake.pawn = nil
+
 ---------------------------------------------------------------------------
 -- Grips no longer recenter (chord removed); recenter is the panel button
 ---------------------------------------------------------------------------
@@ -430,6 +472,22 @@ tick(0.6)
 check(game.mode == "menu" and fake.mod_values.VR_AimMethod == "0", "main menu pawn: menu mode, plain aim")
 check(fake.mod_values.VR_MovementOrientation == "0", "main menu (has a pawn) still gets the raw stick")
 check(fake.uobjecthook_disabled == true, "attachments off in menus")
+-- At the start: once on the opening screens (the "press any button"
+-- splash: no pawn yet) after they've been up 4 s, then once more when the
+-- main menu first shows (the menus used to be behind you every start).
+roomscale.reset_start_recenter()
+fake.pawn = nil
+local rc_before = fake.recentered
+roomscale.standing_y = roomscale.standing_y or 1.70
+tick(2.0)
+check(fake.recentered == rc_before, "splash screen: not in the first seconds (it went off during loading)")
+tick(2.5)
+check(fake.recentered == rc_before + 1 and roomscale.start_recenter_done, "splash screen up 4 s: recentered on its own")
+fake.pawn = menu_pawn
+tick(1.5)
+check(fake.recentered == rc_before + 2, "main menu first shows: recentered once more")
+tick(3.0)
+check(fake.recentered == rc_before + 2, "...and no more after that")
 
 local cam = {}
 local hidden = {}
@@ -441,9 +499,25 @@ local game_pawn = { get_address = function() return 0xB00 end,
 cam.get_fname = function() return { to_string = function() return "CameraComponent" end } end
 cam.get_class = function() return { get_fname = function() return { to_string = function() return "RoutineGameCameraComponent" end } end } end
 fake.pawn = game_pawn
-fake.objects["WidgetBlueprintGeneratedClass /Game/UI/Game/Cine/RUI_Cine_Video.RUI_Cine_Video_C"] = {}
+local CINE = "WidgetBlueprintGeneratedClass /Game/UI/Game/Cine/RUI_Cine_Video.RUI_Cine_Video_C"
+local cine_widget = { on_screen = true }
+function cine_widget:IsInViewport() return self.on_screen end
+function cine_widget:IsVisible() return true end
+fake.object_lists = fake.object_lists or {}
+fake.object_lists[CINE] = { cine_widget }
 tick(0.6)
 check(game.mode == "cutscene" and fake.mod_values.VR_2DScreenMode == "true", "cine video widget: 2D screen cutscene")
+-- The video ended but the game kept its widget (after a load / new game):
+-- off screen, so it's gameplay, not a stuck cutscene.
+cine_widget.on_screen = false
+tick(0.6)
+check(game.mode == "game", "video widget left over off screen: back to gameplay (not stuck in cutscene)")
+-- Shown inside another widget rather than on the viewport: still a cutscene.
+cine_widget.GetParent = function() return {} end
+tick(0.6)
+check(game.mode == "cutscene", "video widget inside another widget: still a cutscene")
+cine_widget.GetParent = nil
+fake.object_lists[CINE] = nil
 local cat_root = { RelativeLocation = { X = 30, Y = 0, Z = -20 }, RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 } }
 local input_mod = require("routine_vr.input")
 local light = { Intensity = 0 }
@@ -679,6 +753,24 @@ end
 check(near(pawn_yaw - yaw0, 55), "the character turns toward the head, up to the dead zone")
 check(worst_seen < 0.01, "the view holds still every frame while the body follows")
 check(near(game.head_yaw(), 35), "the head ends up the dead zone from the body")
+-- The game turns the character itself (onto a ladder): the view goes with
+-- it, nothing is undone, and nothing keeps turning (the old spin).
+local seen1 = pawn_yaw + off_yaw()
+pawn_yaw = pawn_yaw + 30
+game_frames(1, false)
+check(near((pawn_yaw + off_yaw()) - seen1, 30), "a turn the game makes isn't undone on the view")
+local settled = pawn_yaw
+game_frames(72, false)
+check(near(pawn_yaw, settled), "...and the body doesn't start turning on its own (no spin)")
+-- Leaning (RB sent): body follow pauses.
+fake.poses = { [0] = { pos = { 0, 1.7, 0 }, rot = { math.cos(math.rad(45)), 0, -math.sin(math.rad(45)), 0 } } }
+input_mod.diag.rb_out = true
+local lean_yaw = pawn_yaw
+callbacks.on_pre_engine_tick(nil, 1 / 72)
+check(near(pawn_yaw, lean_yaw) and not game.follow_active, "leaning: body follow pauses")
+input_mod.diag.rb_out = false
+fake.poses = { [0] = { pos = { 0, 1.7, 0 }, rot = { 1, 0, 0, 0 } } }
+game_frames(72, false)
 fake.axis.right = { 1.0, 0 }
 local before_turn = pawn_yaw
 game_frames(1, false)
@@ -747,21 +839,29 @@ fake.poses = nil
 settings.data.cat_grip = "off"
 hold("Grip", "right", true); tick(0.1)
 gp = poll(XINPUT_GAMEPAD_RIGHT_SHOULDER)
-settings.data.lean_left_grip = false
 tick(0.1)
 gp = poll(XINPUT_GAMEPAD_RIGHT_SHOULDER)
 check(not game.raised and has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER), "grip off: grip is RB (lean) again")
 hold("Grip", "right", false)
-settings.data.lean_left_grip = true
-hold("Grip", "left", true)
+-- Lean on the off-hand trigger (the default): LT pulled sends RB, and the
+-- left grip sends nothing (it only curls the fingers).
+settings.data.lean_button = "trigger"
+settings.data.lt_raises_cat = false
 tick(0.1)
 gp = poll(XINPUT_GAMEPAD_LEFT_SHOULDER)
-check(has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER) and not has(gp, XINPUT_GAMEPAD_LEFT_SHOULDER), "left grip leans (RB, not LB) in gameplay")
-hold("Grip", "left", false)
+check(not has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER) and not has(gp, XINPUT_GAMEPAD_LEFT_SHOULDER), "trigger lean: the left grip doesn't lean")
+local lean_state = { Gamepad = { wButtons = 0, bLeftTrigger = 200, bRightTrigger = 0, sThumbLX = 0, sThumbLY = 0, sThumbRX = 0, sThumbRY = 0 } }
+callbacks.on_xinput_get_state(0, 0, lean_state)
+check(has(lean_state.Gamepad, XINPUT_GAMEPAD_RIGHT_SHOULDER) and lean_state.Gamepad.bLeftTrigger == 0
+    and not has(lean_state.Gamepad, XINPUT_GAMEPAD_DPAD_UP), "trigger lean: LT sends lean (RB), not LT or Focus")
+settings.data.lt_raises_cat = true
+settings.data.lean_button = "grip"
 tick(0.1)
+gp = poll(XINPUT_GAMEPAD_LEFT_SHOULDER)
+check(has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER) and not has(gp, XINPUT_GAMEPAD_LEFT_SHOULDER), "grip lean: left grip leans (RB, not LB) in gameplay")
 gp = poll(0)
 check(not has(gp, XINPUT_GAMEPAD_RIGHT_SHOULDER), "left grip released: no lean")
-settings.data.lean_left_grip = false
+settings.data.lean_button = "off"
 settings.data.cat_grip = "hold"
 tick(0.1)
 
@@ -1115,6 +1215,16 @@ check(windows == 0, "panel window hidden while UEVR menu is closed")
 fake.drawing_ui = true
 local ok, err = pcall(callbacks.on_frame)
 check(ok and windows == 1, "panel window draws when UEVR menu is open: " .. tostring(err))
+-- Every header and expander open: all of the panel draws, and each
+-- expander that opens is closed again.
+local opened, popped = 0, 0
+imgui.collapsing_header = function() return true end
+imgui.tree_node = function() opened = opened + 1 return true end
+imgui.tree_pop = function() popped = popped + 1 end
+local ui_ok, ui_err = pcall(callbacks.on_frame)
+check(ui_ok and opened > 5 and opened == popped, "panel draws with every section open, expanders balanced: "
+    .. tostring(ui_err) .. " (" .. opened .. " opened, " .. popped .. " closed)")
+imgui.collapsing_header, imgui.tree_node, imgui.tree_pop = nil, nil, nil
 fake.drawing_ui = false
 imgui.begin_window = real_begin
 ok, err = pcall(callbacks.on_script_reset)
@@ -1491,6 +1601,13 @@ saved_json["routine_vr.json"] = { cat_holster_right = { rot = { 0, 0, 0 }, loc =
 settings.load()
 check(settings.get("cat_holster_right").loc[2] == 24.2 and settings.get("cat_holster_left").loc[1] == 3,
     "old zero holster offset takes the new hip default; a tuned one is kept")
+saved_json["routine_vr.json"] = { crouch_button = "X", crouch_drop = 0.35 }
+settings.load()
+check(settings.get("crouch_button") == "B" and settings.get("crouch_drop") == 0.25 and settings.get("physical_crouch") == true,
+    "saved crouch on X (never crouched) moves to B, the old 35 cm duck to 25 cm, and crouch comes on")
+saved_json["routine_vr.json"] = { crouch_layout = 3, physical_crouch = false }
+settings.load()
+check(settings.get("physical_crouch") == false, "crouch turned off after it was on by default: stays off")
 saved_json["routine_vr.json"] = { device = "quest_touch" }
 settings.load()
 check(settings.get("device") == "auto", "old saved Touch default moves to auto-detect")

@@ -30,6 +30,7 @@ local M = {}
 local api = uevr.api
 local WORLD_SPACE = 0
 local COMPONENT_SPACE = 1
+local BOUNDS_SCALE = 20.0      -- culling box around the arms, times the imported one
 local RTS_COMPONENT = 2      -- ERelativeTransformSpace, for GetSocketTransform
 local COLLAPSE = 0.001
 local RETRY_SECONDS = 5.0
@@ -359,6 +360,7 @@ end
 -- while put away, with motion hands on: the game's own lowered pose follows
 -- its hidden arms, so the C.A.T. floated in front of you while crawling).
 M.cat_place = "home"
+M.hidden_by_game = false   -- the gloves were found hidden (by the game) and shown again
 M.cat_scale = "?"          -- C.A.T. world scale and the gloves' palm/socket scales, for the recorder
 M.cat_where = "?"          -- what the C.A.T. is attached to (parent:socket), for the recorder
 local hit_result = nil
@@ -491,6 +493,11 @@ local function create(pawn)
     pcall(function() mesh:SetCollisionEnabled(0) end)
     pcall(function() mesh:SetCastShadow(false) end)
     pcall(function() mesh:SetOwnerNoSee(false) end)
+    -- The engine culls the mesh by a box around its imported pose, which
+    -- the posed hands leave far behind: looking down at some angles, or
+    -- crawling, the box went out of view and the arms vanished. A big box
+    -- keeps them drawn wherever the hands are.
+    pcall(function() mesh:SetBoundsScale(BOUNDS_SCALE) end)
     -- The game's own pose gives natural fingers (it holds the C.A.T.).
     learn_fingers(mesh)
     pcall(function() mesh:CopyPoseFromSkeletalComponent(arms) end)
@@ -946,10 +953,23 @@ local function update_cat()
     end) or "?"
 end
 
+-- The game hides the pawn's arm meshes in some states (crawling), which
+-- can catch the gloves too: while they should show, check every so often
+-- that they still do.
+local recheck = 0
 local function set_shown(want)
-    if want == shown or M.mesh == nil then return end
-    shown = want
+    if M.mesh == nil then return end
     local mesh = M.mesh
+    if want == shown then
+        recheck = recheck - 1
+        if not want or recheck > 0 then return end
+        recheck = 15
+        local hidden = safe(function() return not mesh:IsVisible() or mesh.bHiddenInGame == true end)
+        M.hidden_by_game = hidden == true
+        if not hidden then return end
+        pcall(function() mesh:SetHiddenInGame(false, false) end)
+    end
+    shown = want
     pcall(function() mesh:SetVisibility(want, false) end)
 end
 

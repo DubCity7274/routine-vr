@@ -15,9 +15,9 @@ What it adds on top of plain UEVR:
 | Touch the C.A.T.'s buttons | Press its side buttons with your other index finger (the controller buzzes) |
 | Aim with your hand | `AimMethod = Right Controller` (left in left-handed mode); turning stays smooth with the C.A.T. out |
 | Left-handed mode | One checkbox swaps the C.A.T., aim, interact trigger, touch and grips |
-| Physical crouch | Experimental, off by default: duck in real life and the game crouches (not working yet, see the to-do list) |
+| Physical crouch | Duck in real life and the game crouches (switch off under Room-scale) |
 | Game menu | Tap Y |
-| Recenter | Hold B + Y for 3 s (works in menus), or the panel button |
+| Recenter | Hold B + Y for 3 s (works in menus) or use the panel button; the mod also tries on its own at startup |
 | Cutscenes and menus | Pre-rendered cutscenes on a flat 2D screen, menus with plain aim; gameplay switches back automatically |
 | Headset auto-detect | The controller layout is picked from the headset UEVR finds: Quest Touch, Index, Pico, WMR, Vive wands |
 | Comfort | Fisheye lens, film grain, vignette, motion blur, DoF, chromatic aberration and lens flares off; sharpen can go too (all switchable; fisheye/grain/sharpen need the PPV pak mod) |
@@ -135,8 +135,20 @@ with both stick/pad clicks held for 3 seconds instead of B + Y.
 ## The Routine VR panel
 
 Click both thumbsticks to open UEVR's overlay; the **Routine VR** window
-opens beside UEVR's own. Everything below has its settings there, and they
-are saved in `<profile>/data/routine_vr.json`.
+opens beside UEVR's own. The top line shows what the mod is doing and has
+a recenter button; below it are collapsible sections:
+
+| Section | What's in it |
+|---|---|
+| Controls | Left-handed mode, how the grip raises the C.A.T., lean, Y menu, stick movement and turning |
+| Hands and body | Motion hands, the body, body follow, glove alignment, fingers and thumb |
+| C.A.T. | The hip holster, touching its buttons, the laser pointer |
+| Room-scale | Height calibration, physical crouch, recenter at start |
+| Comfort | The camera effects the mod removes |
+| Controllers | Controller layout (auto-detected) |
+| Advanced | The recorder for bug reports, input check, body scan, attachments for use without motion hands |
+
+Settings are saved in `<profile>/data/routine_vr.json`.
 
 ## Hands and the C.A.T.
 
@@ -144,42 +156,45 @@ are saved in `<profile>/data/routine_vr.json`.
 controllers, running from the body's shoulders, so you see your own arms.
 The index finger follows the trigger, the other fingers the grip, the thumb
 the face buttons and thumbrest. If the gloves don't line up with your real
-hands, each has offset sliders in the **Motion hands** section.
+hands, each has offset sliders under **Hands and body** → Glove alignment.
 
 **Raising the C.A.T.:** reach to your right hip and grip to draw it, like a
 holster (the controller buzzes when your hand is there); it stays out while
-you hold the grip. In the **C.A.T.** section the grip can be switched to
+you hold the grip. In **Controls** the grip can be switched to
 hold-anywhere, press-to-toggle or off. The C.A.T. sits in your glove the way the game holds it.
 
 **Hip holster:** put away, the C.A.T. hangs on your hip (so it's out of
-the way when crawling). Its position and angle have sliders in **Motion
-hands**, kept separately for right- and left-handed mode.
+the way when crawling). Its position and angle have sliders in the
+**C.A.T.** section, kept separately for right- and left-handed mode.
 
 **Touch:** with the C.A.T. out, press one of its side buttons with your
 other index finger (the controller buzzes). No need to inspect.
 
-**Lean** (needed in the tutorial) is on the **left grip** in gameplay,
-since Routine has no use for LB. The C.A.T.'s slow precise-aim turn is
-replaced by a steady turn (speed slider in the **C.A.T.** section).
+**Lean** (needed in the tutorial) is on your off hand's **trigger** (the
+left one, right-handed). It used to be the grip, but that's easy to hold
+without meaning to. In **Controls** lean can go back on the grip, or off;
+then the trigger can send Focus (the game's D-pad up) instead. The C.A.T.'s
+slow precise-aim turn is replaced by a steady turn (speed slider in
+**Controls** → Turning with the C.A.T. out).
 
-**Left-handed mode** (checkbox in the **C.A.T.** section): the C.A.T., aim,
+**Left-handed mode** (checkbox in **Controls**): the C.A.T., aim,
 grip-raise and the hip holster move to the left hand, touch and lean to the
 right, and the left trigger becomes interact.
 
 **Body:** the suit's body is shown under you, head hidden, with the ID card
 on the chest. **Body turns to follow your head** turns the character once
-your head is past the dead zone; tune the dead zone and speed in **Motion
-hands**.
+your head is past the dead zone; tune the dead zone and speed in **Hands
+and body**.
 
 With motion hands off, the mod falls back to UEVR attachments: the C.A.T.
 and the pawn's `CameraComponent` (where Routine points and clicks from) go
-on the controller, with sliders in **Hands (6DoF)**. UEVR's own
+on the controller, with sliders in **Advanced** → Controller attachments. UEVR's own
 **UObjectHook** tab does the same job with more knobs.
 
 ## Default controls (Quest Touch, right-handed)
 
 Buttons go through UEVR's own controller mapping; the mod adds a few
-controls on top. Left-handed mode (panel, C.A.T. section) swaps the hands:
+controls on top. Left-handed mode (panel, Controls) swaps the hands:
 the C.A.T., aiming and grip-raise move to the left hand, touch and lean to
 the right, and the left trigger becomes interact.
 
@@ -188,8 +203,8 @@ the right, and the left trigger becomes interact.
 | Right trigger | Interact / click (point with your right hand) |
 | Right grip | At your hip: draw the C.A.T. (hold to keep it out; hold-anywhere or toggle in the panel) |
 | Left index finger | Press the C.A.T.'s side buttons by touching them |
-| Left trigger | Focus (the game's D-pad up) |
-| Left grip | Lean |
+| Left trigger | Lean |
+| Left grip | Curls the fingers (no game action) |
 | Left X | Crouch |
 | Right B | Interact |
 | Tap Y | Game menu (Start) |
@@ -263,7 +278,7 @@ Any Lua 5.3+ works. On this machine:
 
 Beta. Written against UEVR nightly 01143's Lua API and Routine build
 22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
-offline tests cover the mod's logic (230). Not tested yet: other headsets
+offline tests cover the mod's logic (247). Not tested yet: other headsets
 (the layouts are there, but only Touch has been played) and the Windows
 installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 

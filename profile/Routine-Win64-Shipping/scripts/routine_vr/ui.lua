@@ -21,7 +21,6 @@ local touch = require("routine_vr.touch")
 local M = {}
 
 local CROUCH_MODES = { "toggle", "hold" }
-local REMAP_SOURCES = { "A", "B", "X", "Y", "LB", "RB", "LS", "RS", "LT", "RT" }
 
 local function index_of(list, value)
     for i, v in ipairs(list) do
@@ -45,60 +44,20 @@ local function slider_setting(label, key, lo, hi)
     if changed then settings.set(key, v) end
 end
 
-local function draw_controllers()
-
-    local changed_move, move_idx = imgui.combo("Left stick moves toward",
-        index_of(movement.CHOICES, settings.get("move_direction")), movement.LABELS)
-    if changed_move then settings.set("move_direction", movement.CHOICES[move_idx]) end
-    imgui.text("Right now: " .. (movement.in_menu and "menu (raw stick)" or "gameplay"))
-
-    checkbox_setting("Snap turn on right stick", "snap_turn")
-    checkbox_setting("Right stick up/down does nothing in gameplay (look with your head)", "lock_stick_pitch")
-    imgui.text("Snap turn right now: " .. (movement.snap_turn_active() and "on" or "off"))
-    local d = input.diag
-    imgui.text(string.format("Input check: %d polls, UEVR %s", d.polls, d.gate))
-    imgui.text(string.format("  RB (lean) from UEVR: %s, sent: %s | LT sent: %d | stick X sent: %d",
-        d.rb_in and "on" or "off", d.rb_out and "on" or "off", d.lt_out or 0, d.rx_out or 0))
+-- A section of the panel: a collapsing header (closed until opened).
+local function header(title)
+    if imgui.collapsing_header then return imgui.collapsing_header(title) end
     if imgui.separator then imgui.separator() end
-
-    -- First entry: auto-detect from the headset name in UEVR's log.
-    local names = { "Auto-detect" }
-    for _, n in ipairs(devices.names()) do names[#names + 1] = n end
-    local cur = settings.get("device") == "auto" and 1 or devices.index_of(settings.get("device")) + 1
-    local changed, idx = imgui.combo("Controller layout", cur, names)
-    if changed then
-        local id = idx == 1 and "auto" or devices.order[idx - 1]
-        settings.set("device", id)
-        input.set_device(id)
-        hands.mark_dirty()
-    end
-    imgui.text("Using: " .. input.device.name .. (input.auto_device and
-        (" (headset: " .. tostring(input.detected_name or "not known yet") .. ")") or " (chosen by hand)"))
-    imgui.text("Runtime: " .. (devices.uses_openvr() and "OpenVR (per-controller pitch fix on)" or "OpenXR"))
+    imgui.text("== " .. title .. " ==")
+    return true
 end
 
-local function draw_roomscale()
-    imgui.text("Status: " .. roomscale.status)
-    if roomscale.standing_y ~= nil then
-        imgui.text(string.format("Head %.2f m, drop %.2f m, %s",
-            roomscale.head_y, roomscale.standing_y - roomscale.head_y,
-            roomscale.crouched and "CROUCHED" or "standing"))
+-- Sliders and details tucked into an expander inside a section.
+local function expander(label, draw)
+    if imgui.tree_node(label) then
+        draw()
+        imgui.tree_pop()
     end
-
-    imgui.text(string.format("Or hold B + Y for %.0f s anywhere (menus too).", settings.get("recenter_hold")))
-    if roomscale.recenter_progress > 0 then
-        imgui.text(string.format("Recentering... %d%%", math.floor(roomscale.recenter_progress * 100)))
-    end
-    if imgui.button("Recenter + recalibrate now") then roomscale.recenter() end
-    imgui.same_line()
-    if imgui.button("Recalibrate height only") then roomscale.calibrate() end
-
-    if imgui.separator then imgui.separator() end
-    checkbox_setting("Physical crouch", "physical_crouch")
-    slider_setting("Crouch when head drops (m)", "crouch_drop", 0.15, 0.7)
-    slider_setting("Stand-up hysteresis (m)", "crouch_hysteresis", 0.02, 0.2)
-    combo_setting("Game crouch button", "crouch_button", input.BUTTON_NAMES)
-    combo_setting("Game crouch style", "crouch_mode", CROUCH_MODES)
 end
 
 local function draw_offset_sliders(comp, a)
@@ -121,9 +80,246 @@ local function draw_offset_sliders(comp, a)
     end
 end
 
+-- A row of small buttons that set one setting; shows the current value.
+local function choice_buttons(label, key, choices)
+    imgui.text(label .. "  [" .. tostring(settings.get(key)) .. "]")
+    for i, m in ipairs(choices) do
+        if i > 1 then imgui.same_line() end
+        if imgui.small_button(m[2] .. "##" .. key) then settings.set(key, m[1]) end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Top: always visible
+---------------------------------------------------------------------------
+
+local function draw_top()
+    imgui.text("Routine VR " .. VERSION .. "   |   mode: " .. tostring(game.mode)
+        .. "   |   C.A.T.: " .. (game.raised and "out" or "away")
+        .. "   |   " .. (settings.get("handedness") == "left" and "left-handed" or "right-handed")
+        .. string.format("   |   frame %.1f ms (worst %.1f)", probe.frame_ms or 0, probe.worst_ms or 0))
+    if imgui.button("Recenter + recalibrate now") then roomscale.recenter() end
+    imgui.same_line()
+    imgui.text(string.format("(or hold B + Y for %.0f s, menus too)", settings.get("recenter_hold")))
+    if roomscale.recenter_progress > 0 then
+        imgui.text(string.format("Recentering... %d%%", math.floor(roomscale.recenter_progress * 100)))
+    end
+end
+
+---------------------------------------------------------------------------
+-- Controls
+---------------------------------------------------------------------------
+
+local GRIP_MODES = { { "hip", "Grip at your hip (holster)" }, { "hold", "Hold grip anywhere" },
+    { "toggle", "Press grip to toggle" }, { "off", "Off" } }
+local LEAN_MODES = { { "trigger", "Trigger" }, { "grip", "Grip" }, { "off", "Off" } }
+
+local function draw_controls()
+    local changed_h, left = imgui.checkbox("Left-handed (C.A.T., aim and interact on the left hand)", settings.get("handedness") == "left")
+    if changed_h then
+        settings.set("handedness", left and "left" or "right")
+        game.refresh_hands()
+    end
+    choice_buttons("Your main hand's grip raises the C.A.T.:", "cat_grip", GRIP_MODES)
+    if settings.get("cat_grip") == "hip" then
+        imgui.text(string.format("Hand at your hip: %s (%.2f m from the draw spot)",
+            hip.at_hip and "yes" or "no", hip.distance or -1))
+        expander("Where the hip draw spot is", function()
+            slider_setting("Below your head (m)", "hip_drop", 0.3, 1.0)
+            slider_setting("To the side (m)", "hip_side", -0.1, 0.5)
+            slider_setting("Behind (m)", "hip_back", -0.2, 0.3)
+            slider_setting("Size (m)", "hip_radius", 0.1, 0.4)
+        end)
+    end
+    choice_buttons("Lean with your off hand's:", "lean_button", LEAN_MODES)
+    if settings.get("lean_button") ~= "trigger" then
+        checkbox_setting("Off-hand trigger sends Focus (the game's D-pad up)", "lt_focus")
+    end
+    checkbox_setting("Tap Y to open the game's menu", "y_opens_menu")
+    checkbox_setting("Left trigger also raises the C.A.T.", "lt_raises_cat")
+
+    if imgui.separator then imgui.separator() end
+    local changed_move, move_idx = imgui.combo("Left stick moves toward",
+        index_of(movement.CHOICES, settings.get("move_direction")), movement.LABELS)
+    if changed_move then settings.set("move_direction", movement.CHOICES[move_idx]) end
+    checkbox_setting("Snap turn on the right stick", "snap_turn")
+    checkbox_setting("Right stick up/down does nothing in gameplay (look with your head)", "lock_stick_pitch")
+    expander("Turning with the C.A.T. out", function()
+        checkbox_setting("Normal-speed turning (not the game's slow aim turn)", "stop_cat_aim_turn")
+        slider_setting("Turn speed (deg/s)", "cat_turn_speed", 30, 360)
+        checkbox_setting("Reverse it (if right turns you left)", "cat_turn_reverse")
+        imgui.text("Turn method: " .. game.turn_method_name())
+        imgui.text(string.format("View turned ahead of your character: %.0f deg", game.view_turn))
+        if game.last_handover then imgui.text("Last handover: " .. game.last_handover) end
+        if game.turn_error then imgui.text("Turn error: " .. game.turn_error) end
+    end)
+end
+
+---------------------------------------------------------------------------
+-- Hands and body
+---------------------------------------------------------------------------
+
+local function draw_hands_body()
+    checkbox_setting("Motion hands (the game's spacesuit arms on your controllers)", "motion_hands")
+    local changed_b, vb = imgui.checkbox("Show your body (spacesuit and chest ID; head hidden)", settings.get("show_body"))
+    if changed_b then
+        settings.set("show_body", vb)
+        game.rehide_body()
+    end
+    checkbox_setting("Arms attached to the body's shoulders", "arm_ik")
+    imgui.text(motion_hands.status)
+    if motion_hands.arm_error then imgui.text("Arm error: " .. motion_hands.arm_error) end
+
+    checkbox_setting("Body turns to follow your head", "body_follow")
+    if settings.get("body_follow") then
+        expander("Body follow tuning", function()
+            slider_setting("Head turn before the body follows (deg)", "body_follow_deadzone", 0, 90)
+            slider_setting("Body turn speed (deg/s)", "body_follow_speed", 30, 720)
+        end)
+    end
+
+    expander("Glove alignment (line each glove up with your real hand)", function()
+        local r = settings.get("hand_right")
+        imgui.text("Right hand:")
+        draw_offset_sliders({ name = "hand_right" }, r)
+        imgui.text("Left hand:")
+        local l = settings.get("hand_left")
+        if imgui.small_button("Copy right hand, mirrored") then
+            -- The left palm bone is mirrored with a half turn of roll (the
+            -- user's tuning: right roll 157, left 21).
+            l.rot = { r.rot[1], -r.rot[2], 180 - r.rot[3] }
+            l.loc = { r.loc[1], -r.loc[2], r.loc[3] }
+            settings.save()
+        end
+        draw_offset_sliders({ name = "hand_left" }, l)
+    end)
+
+    expander("Fingers and thumb", function()
+        imgui.text("Index follows the trigger, the rest the grip, thumb the buttons/thumbrest.")
+        imgui.text("Thumb around the C.A.T. (hold it out while you adjust):")
+        slider_setting("Thumb bend", "thumb_wrap", -0.5, 1.0)
+        slider_setting("Thumb swing 1 (from its base)", "thumb_swing_1", -1.0, 1.0)
+        slider_setting("Thumb swing 2 (the other way)", "thumb_swing_2", -1.0, 1.0)
+        imgui.text("If fingers bend the wrong way: drag the preview, pick the axis that makes a fist.")
+        slider_setting("Curl preview (drag, then set back to 0)", "finger_curl_preview", 0, 1)
+        imgui.text("Bend axis: " .. settings.get("finger_axis"))
+        for i, ax in ipairs({ "x", "y", "z" }) do
+            imgui.same_line()
+            if imgui.small_button("Axis " .. ax:upper()) then settings.set("finger_axis", ax) end
+        end
+        checkbox_setting("Flip right-hand bend", "finger_flip_right")
+        checkbox_setting("Flip left-hand bend", "finger_flip_left")
+        checkbox_setting("Right hand relaxed like the left (applies on rebuild)", "right_rest_from_left")
+        if imgui.small_button("Rebuild hands") then motion_hands.reset() end
+    end)
+end
+
+---------------------------------------------------------------------------
+-- C.A.T.
+---------------------------------------------------------------------------
+
+local function draw_cat()
+    imgui.text("C.A.T.: " .. ({ glove = "in your hand", holster = "on your hip", home = "where the game keeps it" })[motion_hands.cat_place or "home"])
+    checkbox_setting("Put away, it hangs on your hip (needs motion hands)", "cat_holster")
+    if settings.get("cat_holster") then
+        local side = settings.get("handedness") == "left" and "left" or "right"
+        expander("Hip position (" .. side .. "-handed; put the C.A.T. away to see it)", function()
+            imgui.text("From your pelvis: forward/right/up cm, angle from facing forward.")
+            draw_offset_sliders({ name = "cat_holster_" .. side }, settings.get("cat_holster_" .. side))
+        end)
+    end
+
+    if imgui.separator then imgui.separator() end
+    checkbox_setting("Press its side buttons by touching them with your other index finger", "touch_buttons")
+    checkbox_setting("Fingertip dot while the C.A.T. is out", "touch_marker")
+    expander("Touch details", function()
+        slider_setting("Fingertip forward (cm)", "touch_forward", -10, 20)
+        slider_setting("Fingertip up (cm)", "touch_up", -10, 10)
+        imgui.text(touch.status)
+        local fn = settings.get("touch_press_function")
+        imgui.text(fn == "" and "Pressing is off: a touch only buzzes."
+            or ("Presses with " .. fn .. "(). Presses so far: " .. tostring(touch.presses or 0)))
+        if touch.signature then imgui.text("Game function: " .. touch.signature) end
+        if touch.last_error then imgui.text("Last error: " .. touch.last_error) end
+    end)
+
+    if imgui.separator then imgui.separator() end
+    local changed, idx = imgui.combo("Laser pointer", index_of(laser.CHOICES, settings.get("laser")), laser.LABELS)
+    if changed then settings.set("laser", laser.CHOICES[idx]) end
+    expander("Laser tuning", function()
+        slider_setting("Length (cm)", "laser_length", 20, 400)
+        slider_setting("Start forward (cm)", "laser_forward", -30, 30)
+        slider_setting("Start up (cm)", "laser_up", -30, 30)
+    end)
+end
+
+---------------------------------------------------------------------------
+-- Room-scale
+---------------------------------------------------------------------------
+
+local function draw_roomscale()
+    imgui.text("Status: " .. roomscale.status)
+    if roomscale.standing_y ~= nil then
+        imgui.text(string.format("Head %.2f m, drop %.2f m, %s",
+            roomscale.head_y, roomscale.standing_y - roomscale.head_y,
+            roomscale.crouched and "crouched" or "standing"))
+    end
+    if imgui.button("Recalibrate height only") then roomscale.calibrate() end
+    checkbox_setting("Recenter on its own when the game starts (on its first screen)", "recenter_on_start")
+    expander("Physical crouch", function()
+        checkbox_setting("Physical crouch (duck in real life to crouch)", "physical_crouch")
+        imgui.text("Crouches with: " .. tostring(roomscale.crouch_method))
+        imgui.text("The button settings below are only used if the game's own crouch doesn't work.")
+        slider_setting("Crouch when head drops (m)", "crouch_drop", 0.15, 0.7)
+        slider_setting("Stand-up hysteresis (m)", "crouch_hysteresis", 0.02, 0.2)
+        combo_setting("Game crouch button", "crouch_button", input.BUTTON_NAMES)
+        combo_setting("Game crouch style", "crouch_mode", CROUCH_MODES)
+    end)
+end
+
+---------------------------------------------------------------------------
+-- Comfort
+---------------------------------------------------------------------------
+
+local function draw_effects()
+    for _, g in ipairs(effects.GROUPS) do
+        local changed, v = imgui.checkbox(g.label, settings.get(g.key))
+        if changed then
+            settings.set(g.key, v)
+            effects.apply_all(false)
+        end
+    end
+    imgui.text(effects.status)
+end
+
+---------------------------------------------------------------------------
+-- Controllers
+---------------------------------------------------------------------------
+
+local function draw_controllers()
+    -- First entry: auto-detect from the headset name in UEVR's log.
+    local names = { "Auto-detect" }
+    for _, n in ipairs(devices.names()) do names[#names + 1] = n end
+    local cur = settings.get("device") == "auto" and 1 or devices.index_of(settings.get("device")) + 1
+    local changed, idx = imgui.combo("Controller layout", cur, names)
+    if changed then
+        local id = idx == 1 and "auto" or devices.order[idx - 1]
+        settings.set("device", id)
+        input.set_device(id)
+        hands.mark_dirty()
+    end
+    imgui.text("Using: " .. input.device.name .. (input.auto_device and
+        (" (headset: " .. tostring(input.detected_name or "not known yet") .. ")") or " (chosen by hand)"))
+    imgui.text("Runtime: " .. (devices.uses_openvr() and "OpenVR (per-controller pitch fix on)" or "OpenXR"))
+end
+
+---------------------------------------------------------------------------
+-- Advanced: debugging, and the attachments used without motion hands
+---------------------------------------------------------------------------
+
 local function draw_cat_inspect()
     local a = settings.get("cat_inspect")
-    imgui.text("C.A.T. while inspecting (hold Y to try it):  [" .. a.hand .. "]")
+    imgui.text("C.A.T. while inspecting:  [" .. a.hand .. "]")
     imgui.push_id("cat_inspect")
     local function set_hand(hand)
         a.hand = hand
@@ -139,90 +335,19 @@ local function draw_cat_inspect()
     draw_offset_sliders({ name = "cat_inspect" }, a)
     game.refresh_hands() -- left-handers get a mirrored copy of this pose
     imgui.pop_id()
-    if imgui.separator then imgui.separator() end
 end
 
-local function draw_motion_hands()
-    checkbox_setting("Show motion hands (the game's spacesuit gloves on your controllers)", "motion_hands")
-    checkbox_setting("Arms attached to the body's shoulders (needs the body shown)", "arm_ik")
-    checkbox_setting("Body turns to follow your head", "body_follow")
-    if settings.get("body_follow") then
-        slider_setting("Head turn before the body follows (deg)", "body_follow_deadzone", 0, 90)
-        slider_setting("Body turn speed (deg/s)", "body_follow_speed", 30, 720)
-    end
-    if motion_hands.arm_error then imgui.text("Arm error: " .. motion_hands.arm_error) end
-    local changed_b, vb = imgui.checkbox("Show your body (spacesuit, chest ID; head hidden)", settings.get("show_body"))
-    if changed_b then
-        settings.set("show_body", vb)
-        game.rehide_body()
-    end
-    imgui.text(motion_hands.status)
-    imgui.text("Line each glove up with your real hand. Right hand:")
-    local r = settings.get("hand_right")
-    draw_offset_sliders({ name = "hand_right" }, r)
-    imgui.text("Left hand:")
-    local l = settings.get("hand_left")
-    if imgui.small_button("Copy right hand, mirrored") then
-        -- The left palm bone is mirrored with a half turn of roll (the
-        -- user's tuning: right roll 157, left 21).
-        l.rot = { r.rot[1], -r.rot[2], 180 - r.rot[3] }
-        l.loc = { r.loc[1], -r.loc[2], r.loc[3] }
-        settings.save()
-    end
-    draw_offset_sliders({ name = "hand_left" }, l)
-    imgui.text("With hands on, the C.A.T.'s buttons are pressed with your left index finger.")
-    imgui.text("C.A.T.: " .. ({ glove = "in your hand", holster = "on your hip", home = "where the game keeps it" })[motion_hands.cat_place or "home"])
-    checkbox_setting("Put-away C.A.T. hangs on your hip (keeps it out of your way when crawling)", "cat_holster")
-    if settings.get("cat_holster") then
-        local side = settings.get("handedness") == "left" and "left" or "right"
-        imgui.text("Hip position from your pelvis (forward/right/up cm; put the C.A.T. away to see it):")
-        draw_offset_sliders({ name = "cat_holster_" .. side }, settings.get("cat_holster_" .. side))
-    end
-    imgui.text("Fingers: index follows the trigger, the rest the grip, thumb on buttons/thumbrest.")
-    imgui.text("If they bend the wrong way, drag the preview and pick the axis that curls them into a fist:")
-    slider_setting("Curl preview (drag, then set back to 0)", "finger_curl_preview", 0, 1)
-    imgui.text("Bend axis: " .. settings.get("finger_axis"))
-    for i, ax in ipairs({ "x", "y", "z" }) do
-        if i > 1 then imgui.same_line() end
-        if imgui.small_button("Axis " .. ax:upper()) then settings.set("finger_axis", ax) end
-    end
-    checkbox_setting("Right hand relaxed like the left (applies when hands are rebuilt)", "right_rest_from_left")
-    imgui.text("Thumb on the C.A.T. (hold it out while you adjust):")
-    slider_setting("Thumb bend (curl the joints)", "thumb_wrap", -0.5, 1.0)
-    slider_setting("Thumb swing 1 (move the whole thumb from its base)", "thumb_swing_1", -1.0, 1.0)
-    slider_setting("Thumb swing 2 (the other way)", "thumb_swing_2", -1.0, 1.0)
-    if imgui.small_button("Rebuild hands") then motion_hands.reset() end
-    checkbox_setting("Flip right-hand bend", "finger_flip_right")
-    checkbox_setting("Flip left-hand bend", "finger_flip_left")
-end
-
-local function draw_body()
-    imgui.text("Motion hands, step 1: find out what body Routine has.")
-    if imgui.button("Scan body") then body.scan() end
-    imgui.same_line()
-    local changed, v = imgui.checkbox("Show body", body.showing)
-    if changed then
-        body.set_show(v)
-        if not v then game.rehide_body() end
-    end
-    imgui.text(body.status)
-end
-
-local function draw_hands()
-    draw_cat_inspect()
-    imgui.text("Assign the pawn's parts to your hands. Look for the C.A.T.,")
-    imgui.text("flashlight, and first-person arms. Saved per component name.")
+local function draw_attachments()
+    imgui.text("Used with motion hands off: parts of the pawn on your controllers.")
+    imgui.text("Saved per component name.")
     if imgui.button("Rescan pawn") then hands.rescan() end
-
     if #hands.components == 0 then
         imgui.text("No pawn yet. Load into the game first.")
         return
     end
-
     for _, comp in ipairs(hands.components) do
         local a = hands.attachment_for(comp)
         local tag = a and ("  [" .. a.hand .. "]") or ""
-
         imgui.push_id(comp.name)
         if imgui.small_button("L") then hands.assign(comp, "left") end
         imgui.same_line()
@@ -230,7 +355,6 @@ local function draw_hands()
         imgui.same_line()
         if imgui.small_button("x") then hands.assign(comp, nil) end
         imgui.same_line()
-
         if a ~= nil then
             if imgui.tree_node(comp.name .. " (" .. comp.class .. ")" .. tag) then
                 draw_offset_sliders(comp, a)
@@ -243,111 +367,47 @@ local function draw_hands()
     end
 end
 
-local function draw_status()
-    imgui.text("Mode: " .. tostring(game.mode) .. (game.inspecting and " (inspecting C.A.T.)" or ""))
-end
-
-local function draw_laser()
-    local changed, idx = imgui.combo("Laser pointer", index_of(laser.CHOICES, settings.get("laser")), laser.LABELS)
-    if changed then settings.set("laser", laser.CHOICES[idx]) end
-    slider_setting("Laser length (cm)", "laser_length", 20, 400)
-    slider_setting("Laser start forward (cm)", "laser_forward", -30, 30)
-    slider_setting("Laser start up (cm)", "laser_up", -30, 30)
-end
-
-local function draw_effects()
-    for _, g in ipairs(effects.GROUPS) do
-        local changed, v = imgui.checkbox(g.label, settings.get(g.key))
+local function draw_advanced()
+    expander("C.A.T. recorder (for bug reports)", function()
+        imgui.text("Records the C.A.T., your inputs and the hands for 40 s.")
+        imgui.text("Start it, close this menu, then do the thing that goes wrong.")
+        if imgui.button("Record (40 s)") then probe.start() end
+        imgui.text(probe.status)
+    end)
+    expander("Input check", function()
+        local d = input.diag
+        imgui.text(string.format("%d polls, UEVR %s", d.polls, d.gate))
+        imgui.text(string.format("RB (lean) from UEVR: %s, sent: %s | LT sent: %d | stick X sent: %d",
+            d.rb_in and "on" or "off", d.rb_out and "on" or "off", d.lt_out or 0, d.rx_out or 0))
+        imgui.text("Left stick right now: " .. (movement.in_menu and "menu (raw stick)" or "gameplay"))
+        imgui.text("Snap turn right now: " .. (movement.snap_turn_active() and "on" or "off"))
+    end)
+    expander("Body scan", function()
+        if imgui.button("Scan body") then body.scan() end
+        imgui.same_line()
+        local changed, v = imgui.checkbox("Show the game's own body", body.showing)
         if changed then
-            settings.set(g.key, v)
-            effects.apply_all(false)
+            body.set_show(v)
+            if not v then game.rehide_body() end
         end
-    end
-    imgui.text(effects.status)
-end
-
-local function draw_probe()
-    imgui.text("Records what the game's C.A.T. does for 40 s, for debugging.")
-    imgui.text("Start it, close this menu, then slowly: raise (LT), lower,")
-    imgui.text("raise + inspect (Y), point at each side button and press RT,")
-    imgui.text("then touch each side button with your left hand.")
-    if imgui.button("Record C.A.T. (40 s)") then probe.start() end
-    imgui.text(probe.status)
-end
-
-local GRIP_MODES = { { "hold", "Hold grip" }, { "toggle", "Press grip to toggle" },
-    { "hip", "Grip at right hip (holster)" }, { "off", "Off" } }
-
-local function draw_cat()
-    local changed_h, left = imgui.checkbox("Left-handed (C.A.T. and aiming on the left hand)", settings.get("handedness") == "left")
-    if changed_h then
-        settings.set("handedness", left and "left" or "right")
-        game.refresh_hands()
-    end
-    local mode = settings.get("cat_grip")
-    imgui.text("Your main hand's grip raises the C.A.T. Now: " .. mode)
-    for i, m in ipairs(GRIP_MODES) do
-        if i > 1 then imgui.same_line() end
-        if imgui.small_button(m[2]) then settings.set("cat_grip", m[1]) end
-    end
-    if settings.get("cat_grip") == "hip" then
-        imgui.text("Reach to your right hip and grip to draw the C.A.T.; hold to keep it out.")
-        imgui.text(string.format("Right hand at hip: %s (%.2f m from the holster)",
-            hip.at_hip and "yes" or "no", hip.distance or -1))
-        slider_setting("Holster below head (m)", "hip_drop", 0.3, 1.0)
-        slider_setting("Holster to the right (m)", "hip_side", -0.1, 0.5)
-        slider_setting("Holster behind (m)", "hip_back", -0.2, 0.3)
-        slider_setting("Holster size (m)", "hip_radius", 0.1, 0.4)
-    end
-    checkbox_setting("Left trigger also raises the C.A.T.", "lt_raises_cat")
-    checkbox_setting("Off-hand trigger sends Focus (the game's D-pad up)", "lt_focus")
-    checkbox_setting("Tap Y to open the game's menu (off: Y inspects the C.A.T.)", "y_opens_menu")
-    checkbox_setting("Lean with the left grip (right-handed; left-handers lean with the right grip)", "lean_left_grip")
-    imgui.text("Lean: " .. (settings.get("lean_left_grip") and "left grip" or
-        (settings.get("cat_grip") == "off" and "right grip" or "none - turn one of these on")))
-    checkbox_setting("Normal-speed turning with the C.A.T. out (not the slow aim turn)", "stop_cat_aim_turn")
-    slider_setting("Turn speed with the C.A.T. out (deg/s)", "cat_turn_speed", 30, 360)
-    imgui.text("Turn method: " .. game.turn_method_name())
-    imgui.text(string.format("View turned ahead of your character: %.0f deg (handed over when the C.A.T. is lowered)", game.view_turn))
-    if game.last_handover then imgui.text("Last handover: " .. game.last_handover) end
-    checkbox_setting("Reverse C.A.T.-out turning (if right turns you left)", "cat_turn_reverse")
-    if game.turn_error then imgui.text("Turn error: " .. game.turn_error) end
-    imgui.text("C.A.T. out: " .. (game.raised and "yes" or "no"))
-end
-
-local function draw_touch()
-    checkbox_setting("Touch the C.A.T.'s side buttons with your left hand", "touch_buttons")
-    checkbox_setting("Show fingertip dot while the C.A.T. is out", "touch_marker")
-    slider_setting("Fingertip forward (cm)", "touch_forward", -10, 20)
-    slider_setting("Fingertip up (cm)", "touch_up", -10, 10)
-    imgui.text(touch.status)
-    local fn = settings.get("touch_press_function")
-    imgui.text(fn == "" and "Pressing is off: a touch only buzzes."
-        or ("Presses with " .. fn .. "(). Presses so far: " .. tostring(touch.presses or 0)))
-    if touch.signature then imgui.text("Game function: " .. touch.signature) end
-    if touch.last_error then imgui.text("Last error: " .. touch.last_error) end
-end
-
-local function section(title, draw)
-    if imgui.separator then imgui.separator() end
-    imgui.text("== " .. title .. " ==")
-    draw()
+        imgui.text(body.status)
+    end)
+    expander("Controller attachments (without motion hands)", function()
+        draw_cat_inspect()
+        if imgui.separator then imgui.separator() end
+        draw_attachments()
+    end)
 end
 
 function M.draw()
-    imgui.text("Routine VR " .. VERSION)
-    draw_status()
-
-    section("Laser", draw_laser)
-    section("C.A.T.", draw_cat)
-    section("Touch", draw_touch)
-    section("C.A.T. recorder", draw_probe)
-    section("Motion hands", draw_motion_hands)
-    section("Body (motion hands)", draw_body)
-    section("Controllers", draw_controllers)
-    section("Room-scale", draw_roomscale)
-    section("Comfort", draw_effects)
-    section("Hands (6DoF)", draw_hands)
+    draw_top()
+    if header("Controls") then draw_controls() end
+    if header("Hands and body") then draw_hands_body() end
+    if header("C.A.T.") then draw_cat() end
+    if header("Room-scale") then draw_roomscale() end
+    if header("Comfort") then draw_effects() end
+    if header("Controllers") then draw_controllers() end
+    if header("Advanced") then draw_advanced() end
 end
 
 return M

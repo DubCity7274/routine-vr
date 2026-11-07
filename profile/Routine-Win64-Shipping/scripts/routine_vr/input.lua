@@ -46,7 +46,7 @@ M.right_trigger = 0           -- and on RT
 M.force_lt = false            -- grip raises the C.A.T.: send LT fully pulled (game.lua)
 M.block_lt = false            -- LT doesn't raise the C.A.T. (panel option): LT kept from the game
 M.clear_rb = false            -- ...and drop the RB (lean) that UEVR maps the right grip to
-M.lean_left_grip = false      -- gameplay: left grip sends RB (lean) instead of LB (game.lua)
+M.lean = nil                  -- gameplay: "trigger" or "grip" sends RB (lean) from the off hand (game.lua)
 M.block_turn = false          -- C.A.T. out: right stick X hidden from the game (game.lua turns instead)
 M.inject_rx = nil             -- C.A.T. turn handover: right stick X pushed for the player (game.lua)
 M.y_to_menu = false           -- Y is kept from the game (it opens the menu instead; game.lua)
@@ -222,10 +222,15 @@ local function apply_overrides(state)
         state.Gamepad.wButtons = state.Gamepad.wButtons & ~main_bit
         M.diag.wb_clear = state.Gamepad.wButtons
     end
-    -- Lean moves to the left grip, which Routine doesn't otherwise use.
-    if M.lean_left_grip then
-        state.Gamepad.wButtons = state.Gamepad.wButtons & ~XINPUT_GAMEPAD_LEFT_SHOULDER
-        if left_grip then
+    -- Lean (RB) from the off hand: its trigger or its grip. UEVR maps the
+    -- off-hand grip to LB (right-handed; Routine has no use for it) or RB
+    -- (left-handed), so that bit is taken off first and lean added back.
+    if M.lean ~= nil then
+        local off_bit = M.swap_triggers and XINPUT_GAMEPAD_RIGHT_SHOULDER or XINPUT_GAMEPAD_LEFT_SHOULDER
+        local off_grip = wb_in & off_bit ~= 0
+        state.Gamepad.wButtons = state.Gamepad.wButtons & ~off_bit
+        local lean = (M.lean == "trigger" and off_trigger > 128) or (M.lean == "grip" and off_grip)
+        if lean then
             state.Gamepad.wButtons = state.Gamepad.wButtons | XINPUT_GAMEPAD_RIGHT_SHOULDER
         end
     end

@@ -156,7 +156,7 @@ local function components(label, actor)
 end
 
 local function flags()
-    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s hand=%s cat=%s@%s scale=%s start=%.2f", input.left_trigger or 0,
+    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s hand=%s cat=%s@%s scale=%s hands=%s crouch=%s frame=%.1fms/worst %.1fms start=%.2f", input.left_trigger or 0,
         tostring(game.raised), tostring(game.inspecting), tostring(touch.touching),
         touch.presses or 0, tostring(touch.last_error), tostring(input.diag.gate), tostring(input.diag.rb_in),
         tostring(input.diag.rb_out), tostring(input.diag.lt_out), tostring(input.diag.rx_out), tostring(input.diag.rgrip), tostring(input.diag.clear),
@@ -167,7 +167,10 @@ local function flags()
             if not ok then return "err" end
             return string.format("bits:%s B:%s Y:%s", tostring(bits), tostring(b), tostring(y))
         end)() .. (game.turn_error and (" err " .. game.turn_error) or ""),
-        tostring(touch.signature), handed.main(), tostring(motion_hands.cat_place), tostring(motion_hands.cat_where), tostring(motion_hands.cat_scale),
+        tostring(touch.signature), handed.main(), tostring(motion_hands.cat_place), tostring(motion_hands.cat_where), tostring(motion_hands.cat_scale), motion_hands.hidden_by_game and "rehidden" or "ok",
+        roomscale.standing_y and string.format("%s/head %.2f/stand %.2f/%s", roomscale.crouched and "down" or "up",
+            roomscale.head_y or 0, roomscale.standing_y, tostring(roomscale.crouch_method)) or ("uncalibrated/" .. tostring(roomscale.status)),
+        M.frame_ms, M.worst_ms,
         input.start_pulse or 0)
 end
 
@@ -250,7 +253,19 @@ function M.start()
     save()
 end
 
+-- Frame time, smoothed, and the worst frame in the last second: for the
+-- jitter that only a restart cured (is the game slowing down?).
+M.frame_ms, M.worst_ms = 0.0, 0.0
+local worst_window, worst_timer = 0.0, 0.0
+
 function M.tick(delta)
+    local ms = (delta or 0) * 1000
+    M.frame_ms = M.frame_ms == 0 and ms or (M.frame_ms * 0.95 + ms * 0.05)
+    worst_window = math.max(worst_window, ms)
+    worst_timer = worst_timer + (delta or 0)
+    if worst_timer >= 1.0 then
+        M.worst_ms, worst_window, worst_timer = worst_window, 0.0, 0.0
+    end
     if not running then return end
     elapsed = elapsed + delta
     sample_timer = sample_timer + delta
