@@ -20,7 +20,7 @@ What it adds on top of plain UEVR:
 | Physical crouch | Duck in real life and the game crouches (switch off under Room-scale) |
 | Game menu | Tap Y |
 | Recenter | Hold B + Y for 3 s (works in menus) or use the panel button; the mod also tries on its own at startup |
-| Cutscenes and menus | Pre-rendered cutscenes on a flat 2D screen, menus with plain aim; gameplay switches back automatically |
+| Cutscenes and menus | Video cutscenes play around you in VR with your controls kept, menus use plain aim; an optional mode shows videos on a flat 2D screen |
 | Headset auto-detect | The controller layout is picked from the headset UEVR finds: Quest Touch, Index, Pico, WMR, Vive wands |
 | Comfort | Fisheye lens, film grain, vignette, motion blur, DoF, chromatic aberration and lens flares off; sharpen can go too (all switchable; fisheye/grain/sharpen need the PPV pak mod) |
 | Rendering | Native Stereo with UEVR's Native Stereo Fix, so the C.A.T.'s screen shows in both eyes |
@@ -101,10 +101,13 @@ Then:
 If head tracking is jittery for a whole session, restart the game. On
 some launches UEVR's frame tracking comes up broken (its log warns "maybe
 previous frame was not rendered?" once a second) and only a restart fixes
-it; the Routine VR panel's top line tells you when it sees this.
+it; the Routine VR panel's top line tells you when it sees this (installer
+on Linux only for now, see the headset note below).
 
-Pre-rendered cutscenes play on a flat screen in front of you. That's normal
-for UEVR: videos aren't rendered in 3D.
+Video cutscenes play with the game still around you. UEVR doesn't render
+videos in 3D, so they look flat on their in-game surface. **Comfort →
+Cutscene mode** puts them on a flat 2D screen instead, but that switch has
+crashed the game as a cutscene starts, so it's off by default.
 
 ## Manual install (no installer)
 
@@ -125,8 +128,10 @@ restore your `config.txt` backup).
 ## Headsets and controllers
 
 The controller layout is picked automatically from the headset name UEVR
-logs at startup; you can choose one by hand in the panel's Controllers
-section. Layouts: Meta Quest / Rift (Touch), Valve Index (also Bigscreen
+logs at startup, with the Linux installer (it links UEVR's log where the
+mod is allowed to read it). Without that link, or on Windows for now, the
+mod uses the Touch layout; you can choose one by hand in the panel's
+Controllers section. Layouts: Meta Quest / Rift (Touch), Valve Index (also Bigscreen
 Beyond, Varjo, Pimax), Pico, Windows Mixed Reality (Reverb and others), HTC
 Vive wands (Vive Focus, XR Elite and Cosmos use the Touch layout).
 
@@ -285,7 +290,7 @@ Any Lua 5.3+ works. On this machine:
 
 Beta. Written against UEVR nightly 01143's Lua API and Routine build
 22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
-offline tests cover the mod's logic (258). Not tested yet: other headsets
+offline tests cover the mod's logic (277). Not tested yet: other headsets
 (the layouts are there, but only Touch has been played) and the Windows
 installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 

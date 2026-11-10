@@ -157,7 +157,7 @@ local function components(label, actor)
 end
 
 local function flags()
-    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s hand=%s cat=%s@%s scale=%s hands=%s crouch=%s frame=%.1fms/worst %.1fms sync=%s thumbs=%s reads=%s start=%.2f", input.left_trigger or 0,
+    return string.format("LT=%d raised=%s inspecting=%s touching=%s presses=%d error=%s gate=%s rb_in=%s rb_out=%s lt_out=%s rx_out=%s rgrip=%s clear=%s wb=%s/%s/%s polls=%s turn=%s view_turn=%.0f handover=%s yaws=%s inject=%s buttons=0x%04x recenter=%.2f chord=%s sig=%s hand=%s cat=%s@%s scale=%s hands=%s crouch=%s frame=%.1fms/worst %.1fms sync=%s thumbs=%s reads=%s mode=%s start=%.2f", input.left_trigger or 0,
         tostring(game.raised), tostring(game.inspecting), tostring(touch.touching),
         touch.presses or 0, tostring(touch.last_error), tostring(input.diag.gate), tostring(input.diag.rb_in),
         tostring(input.diag.rb_out), tostring(input.diag.lt_out), tostring(input.diag.rx_out), tostring(input.diag.rgrip), tostring(input.diag.clear),
@@ -173,7 +173,7 @@ local function flags()
             roomscale.head_y or 0, roomscale.standing_y, tostring(roomscale.crouch_method)) or ("uncalibrated/" .. tostring(roomscale.status)),
         M.frame_ms, M.worst_ms, health.broken and ("broken/" .. health.warnings) or ("ok/" .. health.warnings),
         (function() local td = motion_hands.thumb_down or {} return tostring(td.left) .. "/" .. tostring(td.right) end)(),
-        input.source_text(),
+        input.source_text(), tostring(game.mode),
         input.start_pulse or 0)
 end
 

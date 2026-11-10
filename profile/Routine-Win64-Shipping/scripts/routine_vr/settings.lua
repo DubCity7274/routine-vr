@@ -53,6 +53,12 @@ M.defaults = {
     remove_sharpen = false,        -- the game looks better with its sharpen kept
     remove_color_grading = true,
     remove_vignette = true,
+    -- Off: the game plays video cutscenes around you and you keep your
+    -- controls. On: UEVR's flat 2D screen and plain gamepad-style controls
+    -- while one plays. Off because the switch crashed the game as a
+    -- cutscene started (D3D11 query error, the fish in chapter 4) and could
+    -- stick on after one (a save projector).
+    cutscene_mode = false,
 
     -- Component -> hand attachments, edited in the Hands panel.
     -- { name = "<component FName>", hand = "right"|"left", rot = {p,y,r}, loc = {x,y,z} }

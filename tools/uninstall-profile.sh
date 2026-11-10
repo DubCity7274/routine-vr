@@ -15,6 +15,7 @@ dest="$(profile_dir "$compat")"
 [ -d "$dest" ] || { echo "No UEVR profile at $dest: nothing to remove."; exit 0; }
 
 rm -rf "$dest/scripts/routine_vr" "$dest/scripts/routine_vr.lua"
+rm -f "$dest/data/uevr_log.txt"
 rmdir "$dest/scripts" 2>/dev/null || true
 rm -f "$dest/user_script.txt"
 # The mod's UEVR binding files; any the player had before come back.

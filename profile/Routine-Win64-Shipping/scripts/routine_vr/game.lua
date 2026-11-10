@@ -130,7 +130,7 @@ local function detect_mode()
         return "menu"
     end
 
-    if cine_playing() then return "cutscene" end
+    if settings.get("cutscene_mode") and cine_playing() then return "cutscene" end
     return "game"
 end
 

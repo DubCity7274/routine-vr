@@ -41,6 +41,11 @@ done
 
 rsync -a --exclude config.txt "$src/" "$dest/"
 
+# UEVR only lets Lua read inside data/, so link its log in there: the
+# headset auto-detect and the frame-sync warning read it.
+mkdir -p "$dest/data"
+ln -sfn ../log.txt "$dest/data/uevr_log.txt"
+
 if [ -f "$dest/config.txt" ]; then
     tmp="$(mktemp)"
     # Repo keys first (they win), then existing keys the repo doesn't set.

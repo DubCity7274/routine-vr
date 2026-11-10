@@ -287,6 +287,7 @@ end
 ---------------------------------------------------------------------------
 
 local function draw_effects()
+    checkbox_setting("Cutscene mode: flat screen and gamepad controls during video cutscenes (off recommended)", "cutscene_mode")
     for _, g in ipairs(effects.GROUPS) do
         local changed, v = imgui.checkbox(g.label, settings.get(g.key))
         if changed then
@@ -386,6 +387,7 @@ local function draw_advanced()
             d.rb_in and "on" or "off", d.rb_out and "on" or "off", d.lt_out or 0, d.rx_out or 0))
         imgui.text("Left stick right now: " .. (movement.in_menu and "menu (raw stick)" or "gameplay"))
         imgui.text("Snap turn right now: " .. (movement.snap_turn_active() and "on" or "off"))
+        imgui.text("UEVR frame sync: " .. health.status .. " (" .. health.warnings .. " warnings)")
         imgui.text("Controller reads: " .. input.source_text())
         local td = motion_hands.thumb_down or {}
         imgui.text("Thumbs down: left " .. tostring(td.left) .. ", right " .. tostring(td.right))

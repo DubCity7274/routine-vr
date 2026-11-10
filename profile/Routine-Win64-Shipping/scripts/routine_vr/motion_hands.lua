@@ -75,6 +75,8 @@ local modelled = {}      -- right thumb bones as the mesh models them: shaped ar
 local curl = { left = {}, right = {} }  -- chain -> smoothed 0..1
 M.arms = nil             -- the game's own (hidden) arms mesh: live finger poses come from it
 M.holding_cat = false    -- the C.A.T. is in the main hand's glove
+local MIN_SCALE = 0.01   -- below this the C.A.T. is invisible, not small
+local last_hold = nil    -- the C.A.T.'s last offset on the game's hand socket
 local cat_home = nil     -- { root, parent, socket, rel_loc, rel_rot } where the game had the C.A.T.
 local owner_pawn = nil
 local retry_wait = 0.0
@@ -396,6 +398,27 @@ function M.holster_relative(o)
     return { t.x, t.y, t.z }, { p, y, r }
 end
 
+-- The hip offset is baked into the pelvis bone's frame, so whatever pose
+-- the body was in when the C.A.T. went there stays in it: put away during
+-- the wake-up animation in the Ward, it ended up in your chest. Worked out
+-- again every so often, but only applied for a real change of pose (lying
+-- down, crawling), or it stepped visibly with every stride. Compared as a
+-- rotation, not angle by angle: near straight down (the tuned hip pitch is
+-- about -84) pitch/yaw/roll swing wildly for a tiny turn.
+local HIP_REBAKE_DEG = 25.0
+function M.refresh_hip()
+    local h = cat_home
+    if h == nil or h.hip_rot == nil or M.body == nil then return end
+    local ok, l, r = pcall(M.holster_relative, settings.get("cat_holster_" .. handed.main()))
+    if not ok then return end
+    local a = M.rot_to_quat(h.hip_rot[1], h.hip_rot[2], h.hip_rot[3])
+    local q = M.rot_to_quat(r[1], r[2], r[3])
+    local dot = math.min(1, math.abs(a.w * q.w + a.x * q.x + a.y * q.y + a.z * q.z))
+    if math.deg(2 * math.acos(dot)) > HIP_REBAKE_DEG and pcall(set_relative, h.root, l, r) then
+        h.hip_loc, h.hip_rot = l, r
+    end
+end
+
 -- Move the C.A.T. to place ("home", "glove", "holster").
 local function move_cat(place, socket)
     local h = cat_home
@@ -425,6 +448,7 @@ local function move_cat(place, socket)
             h.root:K2_AttachToComponent(M.body, "Bone_Pelvis", 2, 2, 0, false) -- snap to the bone, keep its size
             local l, r = M.holster_relative(settings.get("cat_holster_" .. handed.main()))
             set_relative(h.root, l, r)
+            h.hip_loc, h.hip_rot = l, r
         else
             h.root:K2_AttachToComponent(h.parent, h.socket, 0, 0, 0, false)
             set_relative(h.root, h.rel_loc, h.rel_rot)
@@ -466,6 +490,57 @@ local function fail(msg)
     destroy()
 end
 
+-- Where the game's hand socket sits on the palm, on the game's own arms.
+-- The gloves copy the arm pose once, when they're built; nothing updates
+-- the part that carries that socket afterwards. Built during the wake-up
+-- on the floor in the Ward, the C.A.T. sat wrong for the whole session
+-- until a reload. So the gloves are rebuilt once the game's arms have
+-- settled into a different hold than the one they were built from.
+local SETTLE_INTERVAL, SETTLE_SAMPLES = 0.5, 4    -- steady for about 2 s
+local SETTLE_CM, SETTLE_DEG = 0.8, 4.0
+local SETTLE_MAX_REBUILDS = 3                     -- per pawn
+local settle = { timer = 0.0, base = nil, last = nil, same = 0, rebuilds = 0, pawn = nil }
+
+M.settle = settle -- for the recorder and tests
+
+local function arm_hold()
+    local palm = world_xf(M.arms, PALM.right)
+    local st = world_xf(M.arms, "Socket_Hand_R")
+    local ip = conj(palm.q)
+    return { q = qmul(ip, st.q), t = qrot(ip, { x = st.t.x - palm.t.x, y = st.t.y - palm.t.y, z = st.t.z - palm.t.z }) }
+end
+
+local function hold_differs(a, b)
+    local dx, dy, dz = a.t.x - b.t.x, a.t.y - b.t.y, a.t.z - b.t.z
+    local dot = math.min(1, math.abs(a.q.w * b.q.w + a.q.x * b.q.x + a.q.y * b.q.y + a.q.z * b.q.z))
+    return math.sqrt(dx * dx + dy * dy + dz * dz) > SETTLE_CM or math.deg(2 * math.acos(dot)) > SETTLE_DEG
+end
+
+-- Only while the C.A.T. is away: raised, the game's arms are in its hold.
+local function settle_check(delta)
+    if M.mesh == nil or M.arms == nil or game.mode ~= "game" or game.raised then
+        settle.last, settle.same = nil, 0
+        return
+    end
+    settle.timer = settle.timer + delta
+    if settle.timer < SETTLE_INTERVAL then return end
+    settle.timer = 0.0
+    local ok, now = pcall(arm_hold)
+    if not ok then return end
+    if settle.base == nil then settle.base = now return end
+    if settle.last ~= nil and not hold_differs(now, settle.last) then
+        settle.same = settle.same + 1
+    else
+        settle.same = 0
+    end
+    settle.last = now
+    if settle.same >= SETTLE_SAMPLES and settle.rebuilds < SETTLE_MAX_REBUILDS and hold_differs(now, settle.base) then
+        settle.rebuilds = settle.rebuilds + 1
+        settle.base, settle.last, settle.same = nil, nil, 0
+        M.reset()
+    end
+end
+
 local function create(pawn)
     local arms, asset = find_arms(pawn)
     if arms == nil or asset == nil then return fail("Couldn't find the game's arms mesh yet.") end
@@ -501,6 +576,13 @@ local function create(pawn)
     -- The game's own pose gives natural fingers (it holds the C.A.T.).
     learn_fingers(mesh)
     pcall(function() mesh:CopyPoseFromSkeletalComponent(arms) end)
+    local addr = safe(function() return pawn:get_address() end)
+    if settle.pawn ~= addr then settle.pawn, settle.rebuilds = addr, 0 end
+    settle.timer, settle.last, settle.same = 0.0, nil, 0
+    do
+        local ok, h = pcall(arm_hold)
+        settle.base = (ok and not game.raised) and h or nil
+    end
 
     learn_forearms(mesh)
     learn_arms(mesh)
@@ -886,24 +968,45 @@ local function update_cat()
         return
     end
     local addr = safe(function() return root:get_address() end) or root
+    -- The game can take the C.A.T. back: re-attach it, or swap in a new one
+    -- (seen waking up after a cutscene, in the base by the canal: it sat in
+    -- your chest and turned invisible until a reload). Believing it was
+    -- still on the hip, the mod never placed it again.
+    if M.cat_place ~= "home" then
+        local ours = M.cat_place == "glove" and M.mesh or M.body
+        local parent = safe(function() return root.AttachParent:get_address() end)
+        local want_parent = ours and safe(function() return ours:get_address() end)
+        local swapped = cat_home == nil or cat_home.addr ~= addr
+        if swapped or (parent ~= nil and want_parent ~= nil and parent ~= want_parent) then
+            M.cat_place, M.cat_sig = "home", nil
+            if swapped then cat_home = nil end
+        end
+    end
     if cat_home == nil or cat_home.addr ~= addr then
-        if M.cat_place ~= "home" then return end -- never learn our own glove or holster as its home
         local parent = safe(function() return root.AttachParent end)
         local socket = safe(function() return root.AttachSocketName end)
         local rl = safe(function() local v = root.RelativeLocation; return { v.X, v.Y, v.Z } end) or { 0, 0, 0 }
         local rr = safe(function() local v = root.RelativeRotation; return { v.Pitch, v.Yaw, v.Roll } end) or { 0, 0, 0 }
         local rs = safe(function() local v = root.RelativeScale3D; return { v.X, v.Y, v.Z } end)
+        -- Zero is a state the game leaves it in, not its size (see below).
+        if rs ~= nil and math.abs(rs[1]) < MIN_SCALE then rs = nil end
         if parent == nil then return end
         local sname = safe(function() return type(socket) == "string" and socket or socket:to_string() end) or "?"
         -- After a script reload the C.A.T. can still be on our glove or the
         -- hip: learning that as home carried the holster offset into the hand.
         local pname = safe(function() return parent:get_fname():to_string() end) or ""
-        if pname:find("Poseable", 1, true) or sname == "Bone_Pelvis" then
-            -- Fall back to the game's own spot: the arms mesh's hand socket.
+        -- So can finding it anywhere but a hand: the hold is learned from
+        -- the game's hand socket, and a cutscene may leave it somewhere else.
+        if pname:find("Poseable", 1, true) or sname == "Bone_Pelvis" or not sname:find("Hand", 1, true) then
+            -- Fall back to the game's own spot: the arms mesh's hand socket,
+            -- with the last hold seen there.
             local pawn = api:get_local_pawn(0)
             local arms = pawn and find_arms(pawn)
             if arms == nil then return end
-            parent, socket, sname, rl, rr, rs = arms, "Socket_Hand_R", "Socket_Hand_R", { 0, 0, 0 }, { 0, 0, 0 }, nil
+            local h = last_hold or { rl = { 0, 0, 0 }, rr = { 0, 0, 0 } }
+            parent, socket, sname, rl, rr, rs = arms, "Socket_Hand_R", "Socket_Hand_R", h.rl, h.rr, h.rs
+        else
+            last_hold = { rl = rl, rr = rr, rs = rs }
         end
         cat_home = { root = root, addr = addr, parent = parent, socket = socket, socket_name = sname, rel_loc = rl, rel_rot = rr, rel_scale = rs }
         M.cat_socket = sname
@@ -934,12 +1037,29 @@ local function update_cat()
         if move_cat(want, socket) then M.cat_sig = sig end
     end
     M.holding_cat = M.cat_place == "glove"
+    -- The game can leave the C.A.T. at zero size: waking up in the Ward it
+    -- went to scale 0 on the first draw and stayed there (invisible, still
+    -- fired, its buttons collapsed to a point) until a reload. Every frame,
+    -- since the game may set it again.
+    if M.cat_place ~= "home" then
+        local world = safe(function() return root:K2_GetComponentScale().X end)
+        if type(world) == "number" and math.abs(world) < MIN_SCALE then
+            local rs = cat_home.rel_scale or { 1, 1, 1 }
+            pcall(function()
+                local sc = root.RelativeScale3D
+                sc.X, sc.Y, sc.Z = rs[1], rs[2], rs[3]
+                root:SetRelativeScale3D(sc)
+            end)
+        end
+    end
     -- The game hides the put-away C.A.T. (it was gone from the hip, and
-    -- while crawling); show it again now and then while it's holstered.
-    if M.cat_place == "holster" then
+    -- while crawling); show it again now and then while it's on the hip or
+    -- in the glove (a cutscene can leave it hidden).
+    if M.cat_place ~= "home" then
         show_wait = show_wait - 1
         if show_wait <= 0 then
             show_wait = 15
+            if M.cat_place == "holster" then M.refresh_hip() end
             pcall(function() cat:SetActorHiddenInGame(false) end)
             local skel = safe(function() return cat.SkeletalMeshComponent end)
             if skel ~= nil then
@@ -954,6 +1074,15 @@ local function update_cat()
     M.cat_scale = safe(function()
         local v = root:K2_GetComponentScale()
         local out = string.format("%.2f mirror %s", v.X, M.mirror_n and "yes" or "no")
+        -- What the C.A.T.'s hold was learned as, and its live relative
+        -- transform: the wake-up in the Ward looked off until a reload.
+        local rl, rr, rs = cat_home.rel_loc, cat_home.rel_rot, cat_home.rel_scale
+        out = out .. string.format(" held %.1f,%.1f,%.1f rot %.0f,%.0f,%.0f size %s on %s", rl[1], rl[2], rl[3], rr[1], rr[2], rr[3],
+            rs and string.format("%.2f", rs[1]) or "-", tostring(cat_home.socket_name))
+        out = out .. " rebuilds " .. settle.rebuilds
+        local lv = root.RelativeLocation
+        local ls = root.RelativeScale3D
+        out = out .. string.format(" live %.1f,%.1f,%.1f size %.2f", lv.X, lv.Y, lv.Z, ls.X)
         if M.mesh ~= nil then
             out = out .. string.format(" palmL %.2f palmR %.2f sock %.2f", world_xf(M.mesh, PALM.left).s,
                 world_xf(M.mesh, PALM.right).s, world_xf(M.mesh, cat_home.socket_name or "Socket_Hand_R").s)
@@ -1020,6 +1149,7 @@ function M.tick(delta)
         return
     end
     pcall(update_cat)
+    pcall(settle_check, delta)
     for side in pairs(HAND) do
         local ok, loc, pq, rot_s, loc_s, one = pcall(pose_palm, side)
         if not ok then

@@ -89,23 +89,21 @@ end
 
 local LOG_NAMES = { "OpenXR system Name: ([^\r\n]+)", "[Ss]ystem [Nn]ame: ([^\r\n]+)" }
 
--- The headset name from UEVR's log, or nil (log not readable or not yet
--- written). Tries Lua's io (the profile folder under %APPDATA%), then
--- UEVR's fs, which is rooted in the profile's data folder.
+-- The headset name from UEVR's log, or nil (log not linked or not yet
+-- written). UEVR sandboxes Lua's file access to the profile's data folder,
+-- refusing absolute paths and "..", so log.txt can't be opened directly: the
+-- installer links it into data/ as uevr_log.txt.
+M.LOG_LINK = "uevr_log.txt"
+
 function M.read_system_name()
     local text = nil
     pcall(function()
-        local appdata = os.getenv("APPDATA")
-        if appdata == nil then return end
-        local f = io.open(appdata .. "\\UnrealVRMod\\Routine-Win64-Shipping\\log.txt", "rb")
+        local f = io.open(M.LOG_LINK, "rb")
         if f then
             text = f:read("a")
             f:close()
         end
     end)
-    if text == nil then
-        pcall(function() text = fs.read("../log.txt") end)
-    end
     if type(text) ~= "string" then return nil end
     local found = nil
     for _, pat in ipairs(LOG_NAMES) do

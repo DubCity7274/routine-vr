@@ -209,6 +209,7 @@ settings.data.y_opens_menu = false   -- the layout tests expect Y to reach the g
 settings.data.move_direction = "left_hand"
 settings.data.snap_turn = true
 settings.data.physical_crouch = true
+settings.data.cutscene_mode = true    -- the mode tests exercise it (off by default)
 settings.data.crouch_button = "B"   -- the crouch tests watch B
 settings.data.remove_sharpen = true -- the effects test checks all three rpp commands
 settings.data.laser_length = 100.0  -- the laser tests measure a 1 m beam
@@ -512,6 +513,15 @@ check(game.mode == "cutscene" and fake.mod_values.VR_2DScreenMode == "true", "ci
 cine_widget.on_screen = false
 tick(0.6)
 check(game.mode == "game", "video widget left over off screen: back to gameplay (not stuck in cutscene)")
+-- Cutscene mode is off by default: a video playing changes nothing.
+check(settings.defaults.cutscene_mode == false, "defaults: no cutscene mode")
+settings.data.cutscene_mode = false
+cine_widget.on_screen = true
+tick(0.6)
+check(game.mode == "game" and fake.mod_values.VR_2DScreenMode == "false", "cutscene mode off: a video keeps gameplay mode and VR view")
+settings.data.cutscene_mode = true
+cine_widget.on_screen = false
+tick(0.6)
 -- Shown inside another widget rather than on the viewport: still a cutscene.
 cine_widget.GetParent = function() return {} end
 tick(0.6)
@@ -1132,12 +1142,16 @@ for _, c in ipairs({ { "Meta Quest 3 on WiVRn", "quest_touch" }, { "Oculus Rift 
 end
 local real_open, real_getenv = io.open, os.getenv
 local log_text = "[info] [OpenXR] OpenXR system Name: Valve Index\r\n[info] other\r\n"
+-- As in the game: UEVR's sandboxed io refuses absolute paths and "..", and
+-- a relative path means the profile's data folder.
 os.getenv = function(k) if k == "APPDATA" then return "C:\\users\\steamuser\\AppData\\Roaming" end return real_getenv(k) end
 io.open = function(path, mode)
-    if path:find("UnrealVRMod", 1, true) then
+    if path:find("..", 1, true) then error("This API does not allow access to parent directories") end
+    if path:find("^%a:[\\/]") or path:find("^[\\/]") then error("This API does not allow the use of absolute paths") end
+    if path == "uevr_log.txt" then
         return { read = function() return log_text end, close = function() end }
     end
-    return real_open(path, mode)
+    return nil, "not found"
 end
 check(devices.read_system_name() == "Valve Index", "reads the headset name from UEVR's log")
 input.set_device("auto")
@@ -1246,6 +1260,33 @@ local hb_ok, hb_err = pcall(function() fake.drawing_ui = true callbacks.on_frame
 check(hb_ok, "panel shows the restart notice: " .. tostring(hb_err))
 health.read_new = real_read
 health.reset()
+-- The real reader, through UEVR's sandbox: only the link in data/ opens,
+-- and each read picks up where the last stopped.
+;(function()
+local tmp = os.tmpname()
+local real_io_open = io.open
+local function log(text) local f = assert(real_io_open(tmp, "ab")); f:write(text); f:close() end
+io.open = function(path, mode)
+    if path:find("..", 1, true) or path:find("^%a:[\\/]") or path:find("^[\\/]") then error("sandboxed") end
+    if path == "uevr_log.txt" then return real_io_open(tmp, mode) end
+    return nil, "not found"
+end
+log("[info] start\n" .. W)
+check(health.read_new():find("not rendered", 1, true) ~= nil, "the health check reads UEVR's log through the data/ link")
+check(health.read_new() == "", "...and only new text on the next read")
+log(W)
+tick(6.0)
+check(health.warnings == 1 and not health.broken, "a single warning (a hitch) doesn't flag the launch")
+for _ = 1, 8 do log(W); tick(6.0) end
+check(health.broken, "repeated warnings written a few at a time flag the launch too")
+io.open = function() return nil, "not found" end
+health.reset()
+tick(6.0)
+check(not health.broken and health.status:find("link missing", 1, true) ~= nil, "no link (manual install): says so instead of staying quiet")
+io.open = real_io_open
+os.remove(tmp)
+health.reset()
+end)()
 
 local probe = require("routine_vr.probe")
 local probe_props = { { name = "bRaised", kind = "BoolProperty" } }
@@ -1534,7 +1575,7 @@ check(dist(fo, up) > 10.5, "out of reach: the upper arm lengthens to reach")
 local att3 = nil
 local cat_root3 = { AttachParent = arms_comp, AttachSocketName = "Socket_Hand_R",
                     get_address = function() return 0xCA8 end,
-                    K2_AttachToComponent = function(self, parent, socket, a, b, c) att3 = { parent, socket, a, c }; if c == 2 then self.RelativeScale3D = { X = 1, Y = 1, Z = 1 } end end,
+                    K2_AttachToComponent = function(self, parent, socket, a, b, c) att3 = { parent, socket, a, c }; self.AttachParent, self.AttachSocketName = parent, socket; if c == 2 then self.RelativeScale3D = { X = 1, Y = 1, Z = 1 } end end,
                     K2_GetComponentLocation = function() return { X = 0, Y = 0, Z = 0 } end,
                     K2_GetComponentRotation = function() return { Pitch = 0, Yaw = 0, Roll = 0 } end,
                     K2_SetRelativeLocationAndRotation = function(self, l, r) self.rel = { l.X, l.Y, l.Z } end,
@@ -1574,6 +1615,108 @@ check(near(ml[1], 1) and near(ml[2], -2) and near(ml[3], 3) and near(mr[1], 0) a
     "left glove offset: mirrored across the body")
 ml = mh.mirror_offset({ 1, 2, 3 }, { 0, 0, 0 }, { x = 0, y = 1, z = 0 }, { w = 0, x = 1, y = 0, z = 0 })
 check(near(ml[1], 1) and near(ml[2], 2) and near(ml[3], -3), "left glove offset: turned by the frame correction")
+
+-- The game takes the C.A.T. back after a cutscene: re-attached, or a new
+-- one. It's placed again instead of staying where the game left it.
+;(function()
+local function addr(v) return function() return v end end
+arms_comp.get_address, body_comp.get_address = arms_comp.get_address or addr(0xA1), body_comp.get_address or addr(0xB1)
+mh.mesh.get_address = mh.mesh.get_address or addr(0xC1)
+require("routine_vr.input").left_trigger = 0
+tick(0.2)
+check(mh.cat_place == "holster" and cat_root3.AttachParent == body_comp, "(setup) the C.A.T. is on the hip")
+cat_root3.AttachParent, cat_root3.AttachSocketName = arms_comp, "Socket_Hand_R"
+tick(0.2)
+check(cat_root3.AttachParent == body_comp and mh.cat_place == "holster", "the game re-attached the C.A.T.: back on the hip")
+local before = att3
+local new_root = {}
+for k, v in pairs(cat_root3) do new_root[k] = v end
+new_root.get_address = function() return 0xCA9 end
+new_root.AttachParent, new_root.AttachSocketName = arms_comp, "Socket_Hand_R"
+fake.objects["Class /Script/Routine.RoutineGameCAT"].RootComponent = new_root
+tick(0.2)
+check(new_root.AttachParent == body_comp and mh.cat_place == "holster", "a new C.A.T. after a cutscene: picked up and put on the hip")
+new_root.AttachParent, new_root.AttachSocketName = arms_comp, "Socket_Cutscene"
+local root2 = {}
+for k, v in pairs(new_root) do root2[k] = v end
+root2.get_address = function() return 0xCAA end
+fake.objects["Class /Script/Routine.RoutineGameCAT"].RootComponent = root2
+tick(0.2)
+require("routine_vr.input").left_trigger = 255
+tick(0.2)
+check(root2.AttachParent == mh.mesh and root2.AttachSocketName == "Socket_Hand_R" and mh.cat_place == "glove",
+    "found on an odd socket after a cutscene: it still goes to the glove at the hand socket")
+-- Zero size after a cutscene (the Ward): restored, and never learned.
+local world_scale = 0
+root2.K2_GetComponentScale = function() return { X = world_scale, Y = world_scale, Z = world_scale } end
+root2.SetRelativeScale3D = function(self, v) self.scale_set = v.X; world_scale = v.X end
+root2.RelativeScale3D = { X = 0, Y = 0, Z = 0 }
+tick(0.1)
+check(root2.scale_set == 0.6 or root2.scale_set == 1, "the C.A.T. left at zero size is put back to its real size")
+local root3 = {}
+for k, v in pairs(root2) do root3[k] = v end
+root3.get_address = function() return 0xCAB end
+root3.AttachParent, root3.AttachSocketName = arms_comp, "Socket_Hand_R"
+root3.RelativeScale3D = { X = 0, Y = 0, Z = 0 }
+root3.scale_set = nil
+world_scale = 0
+fake.objects["Class /Script/Routine.RoutineGameCAT"].RootComponent = root3
+tick(0.2)
+check(root3.scale_set == 1, "a C.A.T. found at zero size doesn't teach the mod a zero size")
+-- Put away mid-animation: the hip is worked out again once the body moves.
+root3.K2_GetComponentScale = nil
+require("routine_vr.input").left_trigger = 0
+tick(0.2)
+check(mh.cat_place == "holster", "(setup) back on the hip")
+local real_socket = body_comp.GetSocketTransform
+local before_rel = root3.rel and root3.rel[1]
+local h = math.rad(90) / 2
+body_comp.GetSocketTransform = function(self, b, space)
+    local t = real_socket(self, b, space)
+    if b == "Bone_Pelvis" then t.Rotation = { X = 0, Y = math.sin(h), Z = 0, W = math.cos(h) } end
+    return t
+end
+tick(0.5)
+check(root3.rel ~= nil and math.abs(root3.rel[1] - before_rel) > 1, "the pelvis turned (lying down, standing up): the hip offset is redone")
+-- Walking sway: a small turn of the pelvis leaves the hip where it is,
+-- even at the tuned near-vertical pitch.
+local settled = root3.rel[1]
+h = math.rad(100) / 2
+tick(0.5)
+check(root3.rel[1] == settled, "a small pelvis turn (a walking stride) doesn't move the C.A.T.")
+body_comp.GetSocketTransform = real_socket
+tick(0.5)
+fake.objects["Class /Script/Routine.RoutineGameCAT"].RootComponent = cat_root3
+cat_root3.AttachParent, cat_root3.AttachSocketName = arms_comp, "Socket_Hand_R"
+tick(0.2)
+-- Built while the game's arms were in another pose (on the floor): rebuilt
+-- once they settle into a different hold, and only then.
+do
+    local real_arms = arms_comp.GetSocketTransform
+    local function moved(by)
+        arms_comp.GetSocketTransform = function(self, b, space)
+            local t = real_arms(self, b, space)
+            if b == "Socket_Hand_R" then t.Translation.X = t.Translation.X + by() end
+            return t
+        end
+    end
+    tick(0.2)
+    local n = mh.settle.rebuilds
+    local swing = 0
+    moved(function() swing = swing + 3; return swing end)
+    tick(3.0)
+    check(mh.settle.rebuilds == n, "the game's arms still animating: no rebuild yet")
+    moved(function() return 6 end)
+    tick(4.0)
+    check(mh.settle.rebuilds == n + 1 and mh.mesh ~= nil, "arms settled into a different hold: gloves rebuilt from it")
+    tick(4.0)
+    check(mh.settle.rebuilds == n + 1, "...once: the new hold is now the one they were built from")
+    arms_comp.GetSocketTransform = real_arms
+    tick(4.0)
+end
+require("routine_vr.input").left_trigger = 255 -- raised again, as the next tests expect
+tick(0.2)
+end)()
 
 -- Thumbs curl when the thumb is on the stick or the thumbrest (one action,
 -- the binding files add the stick's touch sensor to it) or a face button.

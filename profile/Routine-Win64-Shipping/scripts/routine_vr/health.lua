@@ -15,6 +15,7 @@ local M = {}
 local CHECK_INTERVAL = 5.0
 local WARNING = "previous frame was not rendered"
 local BROKEN_AFTER = 4          -- warnings in one check (5 s) that mean it's broken
+local BROKEN_TOTAL = 8          -- or this many in all (a smooth launch logs none)
 
 M.broken = false                -- this launch has the jitter; restart the game
 M.warnings = 0                  -- seen this launch
@@ -24,11 +25,12 @@ local timer = CHECK_INTERVAL    -- check on the first tick
 local pos = 0
 local readable = true
 
--- New text in UEVR's log since the last call, or nil. Replaced in tests.
+-- New text in UEVR's log since the last call, or nil. UEVR sandboxes Lua's
+-- file access to the profile's data folder, so this reads the link the
+-- installer makes there (see devices/init.lua). Replaced in tests.
 function M.read_new()
-    local appdata = os.getenv("APPDATA")
-    if appdata == nil or io == nil or io.open == nil then return nil end
-    local f = io.open(appdata .. "\\UnrealVRMod\\Routine-Win64-Shipping\\log.txt", "rb")
+    if io == nil or io.open == nil then return nil end
+    local f = io.open("uevr_log.txt", "rb")
     if f == nil then return nil end
     local size = f:seek("end")
     if size < pos then pos = 0 end -- a new log (the game was restarted)
@@ -60,12 +62,13 @@ function M.tick(delta)
         return
     end
     if type(text) ~= "string" then
-        M.status = "UEVR's log not found"
+        M.status = "can't see UEVR's log (data/uevr_log.txt link missing; the installer makes it)"
         return
     end
     local n = count(text)
     M.warnings = M.warnings + n
-    if n >= BROKEN_AFTER then M.broken = true end
+    -- Once a second normally; the total catches a log written in bursts.
+    if n >= BROKEN_AFTER or M.warnings >= BROKEN_TOTAL then M.broken = true end
     M.status = M.broken and "UEVR frame sync broken this launch: restart the game for smooth tracking"
         or "frame sync ok"
 end
