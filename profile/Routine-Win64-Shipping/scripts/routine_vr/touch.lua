@@ -294,7 +294,12 @@ local function press(cat, name, pawn, tip)
     local ok_en, enabled = pcall(function() return comp.bEnabled end)
     if ok_en and enabled == false then return false end
     cooldown = PRESS_COOLDOWN
+    return M.interact(comp, pawn, tip, cat["Box_" .. name .. "Col"], name)
+end
 
+-- Press any RoutineGameInteractComponent, as the game's own click does.
+function M.interact(comp, pawn, tip, box, name)
+    local fn = settings.get("touch_press_function")
     local list = params_of(comp, fn)
     if list == nil then
         M.last_error = "press " .. name .. ": no function " .. fn
@@ -302,7 +307,7 @@ local function press(cat, name, pawn, tip)
     end
     M.signature = M.describe(list, fn)
 
-    local ctx = { pawn = pawn, tip = tip, box = cat["Box_" .. name .. "Col"], comp = comp }
+    local ctx = { pawn = pawn, tip = tip, box = box, comp = comp }
     local args = {}
     for _, e in ipairs(list) do
         if e.kind == "StructProperty" and e.struct == nil then

@@ -47,6 +47,16 @@ M.defaults = {
     touch_up = 0.0,                -- cm
     touch_press_function = "Interact", -- RoutineGameInteractComponent function that presses
 
+    -- Lean the interaction ray onto usable things near where you point (grab.lua).
+    grab_assist = true,
+    grab_assist_angle = 12.0,      -- degrees off that still counts
+    -- Papers and items you pick up, at their size in the world (held.lua).
+    held_fix = true,
+    held_size = 1.0,               -- times that size
+    held_in_palm = true,           -- in your hand rather than past the fingertips
+    held_offset = { 20.5, -4.0, 1.7 }, -- cm from the controller: forward, outward, up
+    held_rot = { 0.80353, 0.0, 0.0, 0.59527 }, -- turn in the hand (quaternion w,x,y,z, right-hand terms), or false
+
     -- Camera effects removed for comfort (see effects.lua).
     remove_fisheye = true,
     remove_grain = true,

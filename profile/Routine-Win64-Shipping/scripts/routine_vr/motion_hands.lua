@@ -1117,6 +1117,16 @@ local function set_shown(want)
     pcall(function() mesh:SetVisibility(want, false) end)
 end
 
+-- A controller's world location and rotation, or nil (grab.lua).
+function M.controller_pose(side)
+    local m = markers[side]
+    if m == nil then return nil end
+    local loc = safe(function() return m:K2_GetComponentLocation() end)
+    local rot = safe(function() return m:K2_GetComponentRotation() end)
+    if loc == nil or rot == nil then return nil end
+    return loc, rot
+end
+
 -- World position of a hand's index fingertip, or nil (touch.lua).
 function M.fingertip(side)
     if M.mesh == nil or not shown then return nil end

@@ -94,6 +94,16 @@ end
 
 M.qmul = qmul
 
+-- Unreal's rotator axes in world space: forward, right, up, each {x,y,z}.
+function M.rotator_axes(p, y, r)
+    local sp, cp = math.sin(math.rad(p)), math.cos(math.rad(p))
+    local sy, cy = math.sin(math.rad(y)), math.cos(math.rad(y))
+    local sr, cr = math.sin(math.rad(r)), math.cos(math.rad(r))
+    return { x = cp * cy, y = cp * sy, z = sp },
+        { x = sr * sp * cy - cr * sy, y = sr * sp * sy + cr * cy, z = -sr * cp },
+        { x = -(cr * sp * cy + sr * sy), y = cy * sr - cr * sp * sy, z = cr * cp }
+end
+
 -- UE rotator (degrees) -> glm quaternion in hand space, same mapping UEVR
 -- uses for component rotations: glm::yawPitchRoll(-yaw, pitch, -roll).
 function M.rotator_to_quat(p, y, r)

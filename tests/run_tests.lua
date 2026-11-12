@@ -1823,6 +1823,118 @@ saved_json["routine_vr.json"] = { cat_inspect = { hand = "right", rot = { 0, 20,
 settings.load()
 check(settings.get("cat_inspect").hand == "right", "a tuned inspect pose is kept")
 
+;(function()
+    local grab = require("routine_vr.grab")
+    local function near(a, b) return math.abs(a - b) < 0.05 end
+
+    local angle, len = grab.off_line(100, 0, 0)
+    check(near(angle, 0) and near(len, 100), "dead ahead is 0 degrees off")
+    angle, len = grab.off_line(100, 100, 0)
+    check(near(angle, 45), "off to the side measures the angle")
+
+    local f_axis, r_axis, u_axis = grab.axes(0, 90, 0)
+    check(near(f_axis.y, 1) and near(r_axis.x, -1) and near(u_axis.z, 1), "rotator axes: yaw 90 faces +Y")
+    local f2, r2, u2 = grab.to_hand({ X = 10, Y = 0, Z = 0 }, { Pitch = 0, Yaw = 90, Roll = 0 }, { x = 10, y = 50, z = 5 })
+    check(near(f2, 50) and near(r2, 0) and near(u2, 5), "world point into the hand's frame")
+
+    local list = {
+        { f = 100, r = 30, u = 0, reach = 200, key = 1 }, -- about 17 deg off
+        { f = 100, r = 12, u = 0, reach = 200, key = 2 }, -- about 7 deg off
+    }
+    local best = grab.choose(list, 12, nil)
+    check(best and best.key == 2, "the thing closest to the line wins")
+    local picked = grab.pick(list, 20, nil, function(c) return c.key == 2 end)
+    check(picked and picked.key == 1, "something walled off gives way to the next closest")
+    check(grab.pick({ list[2] }, 20, nil, function() return true end) == nil, "only something walled off: no target, trigger stays the game's")
+    check(grab.choose({ list[1] }, 12, nil) == nil, "too far off isn't picked")
+    check(grab.choose({ list[1] }, 14, 1) ~= nil, "a picked target stays a little past the cone")
+    check(grab.choose({ { f = 300, r = 0, u = 0, reach = 200, key = 3 } }, 12, nil) == nil, "out of the game's reach isn't picked")
+end)()
+
+;(function()
+    local held = require("routine_vr.held")
+    local real_find, real_list = uevr.api.find_uobject, UEVR_UObjectHook.get_objects_by_class
+    local cls = {}
+    local inspecting, lerping, game_scale = true, true, { X = 0.1, Y = 0.1, Z = 0.1 }
+    local sets, moved, turned = 0, nil, nil
+    local game_rot = { Pitch = 0, Yaw = 30, Roll = 0 }
+    local motion_hands = require("routine_vr.motion_hands")
+    local real_pose, real_struct = motion_hands.controller_pose, StructObject
+    motion_hands.controller_pose = function()
+        return { X = 100, Y = 20, Z = 30 }, { Pitch = 0, Yaw = 0, Roll = 0 }
+    end
+    StructObject = { new = function() return {} end }
+    local actor = {
+        K2_GetActorLocation = function() return { X = 0, Y = 0, Z = 0 } end,
+        K2_GetActorRotation = function() return { Pitch = game_rot.Pitch, Yaw = game_rot.Yaw, Roll = game_rot.Roll } end,
+        K2_SetActorLocationAndRotation = function(_, v, r)
+            moved = { X = v.X, Y = v.Y, Z = v.Z }
+            turned = { Pitch = r.Pitch, Yaw = r.Yaw, Roll = r.Roll }
+        end,
+        IsInspecting = function() return inspecting end,
+        IsLerping = function() return lerping end,
+        GetNativeTransform = function() return { Scale3D = { X = 1, Y = 1, Z = 1 } } end,
+        GetActorScale3D = function() return { X = game_scale.X, Y = game_scale.Y, Z = game_scale.Z } end,
+        SetActorScale3D = function(_, v) sets = sets + 1; game_scale = { X = v.X, Y = v.Y, Z = v.Z } end,
+        K2_GetRootComponent = function() return nil end,
+        get_class = function() return { get_fname = function() return { to_string = function() return "Paper" end } end } end,
+    }
+    uevr.api.find_uobject = function() return cls end
+    UEVR_UObjectHook.get_objects_by_class = function() return { actor } end
+    local saved_size = settings.get("held_size")
+    settings.set("held_size", 2.0)
+    local saved_offset, saved_rot = settings.get("held_offset"), settings.get("held_rot")
+    settings.set("held_offset", { 8.0, 0.0, 10.0 })
+    settings.set("held_rot", false)
+
+    held.reset()
+    held.tick(0.25)
+    check(held.active == actor and game_scale.X == 2.0, "picked up: full size from the start of the flight")
+    check(moved == nil, "not moved while it flies to the hand")
+    lerping = false
+    held.tick(0.016)
+    held.apply(true)
+    check(moved ~= nil and math.abs(moved.X - 108) < 0.01 and math.abs(moved.Y - 20) < 0.01 and math.abs(moved.Z - 40) < 0.01,
+        "in the hand: placed off the controller by the offset")
+    game_scale = { X = 0.1, Y = 0.1, Z = 0.1 }
+    held.apply()
+    check(game_scale.X == 2.0, "the game shrinking it again is undone")
+
+    local function turned_like(p, y, r)
+        return turned and math.abs(turned.Pitch - p) < 0.1 and math.abs(turned.Yaw - y) < 0.1 and math.abs(turned.Roll - r) < 0.1
+    end
+    check(turned_like(0, 30, 0), "no saved hold: keeps the game's turn")
+    check(held.save_hold() and settings.get("held_rot") ~= false, "a hold can be saved")
+    settings.set("held_rot", { math.cos(math.rad(45)), 0, 0, math.sin(math.rad(45)) }) -- yaw 90 in the hand
+    game_rot = { Pitch = 0, Yaw = 30, Roll = 0 }
+    held.apply(true)
+    check(turned_like(0, 90, 0), "saved hold replaces the game's turn")
+    game_rot = { Pitch = 0, Yaw = 40, Roll = 0 }
+    held.apply(true)
+    check(turned_like(0, 100, 0), "the stick still turns it from the saved hold")
+    local before = turned
+    game_rot = { Pitch = turned.Pitch, Yaw = turned.Yaw, Roll = turned.Roll }
+    held.apply(true)
+    check(turned_like(before.Pitch, before.Yaw, before.Roll), "if the game didn't touch it this frame, nothing drifts")
+    settings.set("held_rot", false)
+
+    moved = nil
+    lerping = true
+    held.tick(0.016)
+    check(held.active == actor and moved == nil and game_scale.X == 2.0, "flying back: kept full size, not moved")
+    lerping, inspecting = false, false
+    held.tick(0.016)
+    check(held.active == nil and game_scale.X == 1.0, "put down: back to world size")
+    motion_hands.controller_pose = real_pose
+    StructObject = real_struct
+
+    settings.set("held_size", saved_size)
+    settings.set("held_offset", saved_offset)
+    settings.set("held_rot", saved_rot)
+    uevr.api.find_uobject, UEVR_UObjectHook.get_objects_by_class = real_find, real_list
+    held.reset()
+end)()
+
 ---------------------------------------------------------------------------
 
 print(string.format("%d passed, %d failed", passes, failures))

@@ -15,6 +15,8 @@ What it adds on top of plain UEVR:
 | Body follows your head | Turn your head past a dead zone and the character turns with you; the view itself never moves (dead zone and speed sliders) |
 | C.A.T. in your hand | Grip to raise it: it sits in the glove the way the game holds it. Hold, toggle, or draw it from your hip like a holster. Put away, it hangs on your hip |
 | Touch the C.A.T.'s buttons | Press its side buttons with your other index finger (the controller buzzes) |
+| Easier grabbing | Point near something you can pick up or use and your hand buzzes; the trigger then grabs it, no exact aim needed. Things behind walls or terminals are left alone |
+| Papers and items in your hand | Picked-up papers keep their real size and sit in your hand, turned to read; the stick still turns them, and you can save your own hold |
 | Aim with your hand | `AimMethod = Right Controller` (left in left-handed mode); turning stays smooth with the C.A.T. out |
 | Left-handed mode | One checkbox swaps the C.A.T., aim, interact trigger, touch and grips |
 | Physical crouch | Duck in real life and the game crouches (switch off under Room-scale) |
@@ -153,7 +155,7 @@ a recenter button; below it are collapsible sections:
 | Section | What's in it |
 |---|---|
 | Controls | Left-handed mode, how the grip raises the C.A.T., lean, Y menu, stick movement and turning |
-| Hands and body | Motion hands, the body, body follow, glove alignment, fingers and thumb |
+| Hands and body | Motion hands, the body, body follow, easier grabbing, held papers, glove alignment, fingers and thumb |
 | C.A.T. | The hip holster, touching its buttons, the laser pointer |
 | Room-scale | Height calibration, physical crouch, recenter at start |
 | Comfort | The camera effects the mod removes |
@@ -231,7 +233,9 @@ the right, and the left trigger becomes interact.
 Your right hand is the game's camera direction: interaction traces, the
 crosshair's real target and the flashlight follow it, not your head. To use
 a terminal or pick something up, point your hand at it and pull the
-trigger. A laser pointer can be switched on in the panel if you want to see
+trigger. With easier grabbing on (Hands and body), pointing close is
+enough for things you pick up or use: your hand buzzes when the trigger
+will grab something. A laser pointer can be switched on in the panel if you want to see
 the exact line.
 
 ## Adding a headset
@@ -290,7 +294,7 @@ Any Lua 5.3+ works. On this machine:
 
 Beta. Written against UEVR nightly 01143's Lua API and Routine build
 22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
-offline tests cover the mod's logic (277). Not tested yet: other headsets
+offline tests cover the mod's logic (298). Not tested yet: other headsets
 (the layouts are there, but only Touch has been played) and the Windows
 installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 

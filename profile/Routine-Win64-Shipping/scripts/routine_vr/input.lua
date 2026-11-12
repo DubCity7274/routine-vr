@@ -43,6 +43,7 @@ M.device = nil
 M.block_stick_pitch = false   -- gameplay: right stick up/down off (game.lua)
 M.left_trigger = 0            -- what the player is pulling on LT (0-255), before force_lt
 M.right_trigger = 0           -- and on RT
+M.block_rt = false            -- keep the interact trigger from the game (grab.lua presses instead)
 M.force_lt = false            -- grip raises the C.A.T.: send LT fully pulled (game.lua)
 M.block_lt = false            -- LT doesn't raise the C.A.T. (panel option): LT kept from the game
 M.clear_rb = false            -- ...and drop the RB (lean) that UEVR maps the right grip to
@@ -247,6 +248,7 @@ local function apply_overrides(state)
     if M.focus and off_trigger > 128 then
         state.Gamepad.wButtons = state.Gamepad.wButtons | XINPUT_GAMEPAD_DPAD_UP
     end
+    if M.block_rt then state.Gamepad.bRightTrigger = 0 end
     if M.force_lt then
         state.Gamepad.bLeftTrigger = 255
     elseif M.block_lt then

@@ -13,6 +13,8 @@ local probe = require("routine_vr.probe")
 local hip = require("routine_vr.hip")
 local body = require("routine_vr.body")
 local motion_hands = require("routine_vr.motion_hands")
+local held = require("routine_vr.held")
+local grab = require("routine_vr.grab")
 -- Everything is required at load: UEVR only finds the mod's files while
 -- the script is first running (a require from on_frame fails).
 local VERSION = require("routine_vr.version")
@@ -181,6 +183,36 @@ local function draw_hands_body()
             slider_setting("Head turn before the body follows (deg)", "body_follow_deadzone", 0, 90)
             slider_setting("Body turn speed (deg/s)", "body_follow_speed", 30, 720)
         end)
+    end
+
+    checkbox_setting("Easier grabbing (the pointer leans onto things near where you point)", "grab_assist")
+    if settings.get("grab_assist") then
+        slider_setting("How far off you can point (deg)", "grab_assist_angle", 2, 30)
+        imgui.text(grab.status)
+    end
+    checkbox_setting("Papers and items you pick up keep their real size", "held_fix")
+    if settings.get("held_fix") then
+        slider_setting("Held item size (1 = real size)", "held_size", 0.25, 4)
+        checkbox_setting("Hold them in your hand, not past your fingertips", "held_in_palm")
+        if settings.get("held_in_palm") then
+            local o = settings.get("held_offset")
+            for i, label in ipairs({ "Held item forward (cm)", "Held item outward (cm)", "Held item up (cm)" }) do
+                local changed, v = imgui.slider_float(label, o[i], -40, 40)
+                if changed then
+                    o[i] = v
+                    settings.save()
+                end
+            end
+            if held.can_save() then
+                if imgui.button("Save how this is turned (for everything you pick up)") then held.save_hold() end
+            else
+                imgui.text("Pick something up and turn it with the stick to save a hold.")
+            end
+            if settings.get("held_rot") and imgui.small_button("Forget the saved hold") then
+                settings.set("held_rot", false)
+            end
+        end
+        imgui.text(held.status)
     end
 
     expander("Glove alignment (line each glove up with your real hand)", function()
