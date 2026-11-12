@@ -26,6 +26,8 @@ local full_scan_timer = 0.0
 local dirty = true
 local scene_component_class = nil
 local extras = {}    -- { name, fn, last } components that aren't the pawn's own (game.lua)
+local NUDGE_COMPONENT = "CameraComponent"  -- the game's interaction ray starts at it
+local nudge = { x = 0, y = 0, z = 0 }      -- terminal.lua's shift of it (glm offset)
 
 local function comp_name(obj)
     local ok, n = pcall(function() return obj:get_fname():to_string() end)
@@ -193,6 +195,9 @@ local function apply_one(comp, a)
     if state == nil then return end
 
     local hand, q, loc = placement(a)
+    if comp.name == NUDGE_COMPONENT and (nudge.x ~= 0 or nudge.y ~= 0 or nudge.z ~= 0) then
+        loc = { x = loc.x + nudge.x, y = loc.y + nudge.y, z = loc.z + nudge.z }
+    end
     state:set_hand(hand)
     state:set_rotation_offset(M.quat_to_offset(q))
     state:set_location_offset(M.vec(loc))
@@ -263,6 +268,22 @@ function M.set_active(name, active)
     if was == active then return end
     inactive[name] = (not active) or nil
     dirty = true
+end
+
+-- Shift the camera (where the game's ray starts) to a point given in cm
+-- forward/right/up of the controller (terminal.lua: the fingertip). Seen in
+-- the headset: the camera's location offset lands mirrored (an offset to
+-- the fingertip put it as far behind the hand), so it's negated here.
+function M.set_camera_nudge(fwd, right, up)
+    local n = M.location_to_glm(-fwd, -right, -up)
+    if math.abs(n.x - nudge.x) + math.abs(n.y - nudge.y) + math.abs(n.z - nudge.z) < 0.3 then return end
+    nudge = n
+    for _, comp in ipairs(M.components) do
+        if comp.name == NUDGE_COMPONENT and attached[comp.name] then
+            local a = find_attachment(comp.name)
+            if a ~= nil then apply_one(comp, a) end
+        end
+    end
 end
 
 function M.is_attached(name)

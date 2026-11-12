@@ -1852,6 +1852,48 @@ check(settings.get("cat_inspect").hand == "right", "a tuned inspect pose is kept
 end)()
 
 ;(function()
+    local terminal = require("routine_vr.terminal")
+    local d = terminal.plane_distance({ X = 0, Y = 0, Z = 0 }, { Pitch = 0, Yaw = 90, Roll = 0 }, { X = 3, Y = 5, Z = 1 })
+    check(math.abs(d - 5) < 0.001, "distance in front of a screen, along the way it faces")
+    local front, across, up = terminal.screen_point({ X = 0, Y = 0, Z = 0 }, { Pitch = 0, Yaw = 90, Roll = 0 }, { X = 3, Y = 5, Z = 1 })
+    check(math.abs(across + 3) < 0.001 and math.abs(up - 1) < 0.001, "position across and up a screen")
+    -- Screen facing +X at the origin, glass 6 cm in front of it; fingertip
+    -- 20 cm out at (y=2, z=3): the ray starts 1.5 cm off the glass, right there.
+    local o = terminal.ray_start({ X = 20, Y = 2, Z = 3 }, 20, { x = 1, y = 0, z = 0 }, 6)
+    check(math.abs(o.X - 7.5) < 0.01 and math.abs(o.Y - 2) < 0.01 and math.abs(o.Z - 3) < 0.01,
+        "the ray starts just off the glass, straight out from under the fingertip")
+    local px = { w = 26, h = 26, cx = 0, cy = 0, px_w = 512, px_h = 512 }
+    local x, y = terminal.to_pixels(px, 0, 0)
+    check(math.abs(x - 256) < 0.01 and math.abs(y - 256) < 0.01, "middle of the screen is the middle pixel")
+    x, y = terminal.to_pixels(px, 13, 13)
+    check(math.abs(x) < 0.01 and math.abs(y) < 0.01, "top left corner (seen from the front) is pixel 0,0")
+    x, y = terminal.to_pixels(px, -13, -13)
+    check(math.abs(x - 512) < 0.01 and math.abs(y - 512) < 0.01, "bottom right corner is the last pixel")
+    local s = { half_w = 20, half_h = 15, cx = 0, cy = 0 }
+    check(terminal.on_screen(s, 10, -5) and not terminal.on_screen(s, 30, 0), "on the screen or off its edge")
+
+    local p, t, deep = terminal.step(false, 0, 3.0, 0.016, 1.0)
+    check(not p, "fingertip 3 cm away: no press")
+    p, t, deep = terminal.step(false, 0, 0.5, 0.016, 1.0)
+    check(p, "fingertip on the screen: press")
+    p, t, deep = terminal.step(p, t, -2.0, 0.016, 1.0, deep)
+    check(p and deep == -2.0, "pushing further in keeps pressing")
+    p, t, deep = terminal.step(p, 0.06, -1.5, 0.016, 1.0, deep)
+    check(p, "a little wobble back (under 1 cm) keeps pressing, so a drag holds")
+    p, t, deep = terminal.step(p, 0.06, -0.8, 0.016, 1.0, deep)
+    check(not p, "coming back 1 cm from the deepest point lets go, even still behind the press point")
+    p, t, deep = terminal.step(false, 0, 0.5, 0.016, 1.0)
+    p, t, deep = terminal.step(p, t, 3.0, 0.016, 1.0, deep)
+    check(p, "a very quick tap still holds a few frames so the game sees it")
+    p, t, deep = terminal.step(p, 0.06, 3.0, 0.016, 1.0, deep)
+    check(not p, "then lets go")
+    p = terminal.step(false, 0, -20, 0.016, 1.0)
+    check(not p, "hand far through the screen (reaching past it) doesn't press")
+    p = terminal.step(true, 0.5, nil, 0.016, 1.0, 0)
+    check(not p, "off the screen: let go")
+end)()
+
+;(function()
     local held = require("routine_vr.held")
     local real_find, real_list = uevr.api.find_uobject, UEVR_UObjectHook.get_objects_by_class
     local cls = {}

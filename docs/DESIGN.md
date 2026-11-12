@@ -501,7 +501,10 @@ The community profile sits on uevrlib (`uevr_utils`, `hands`, `animation`,
    dev tools (`uevr_dev.lua`) in a live session.
 3. **Physical interaction.** Doors, buttons, and terminal screens as
    things you touch, through `interaction.lua`'s mesh and widget hit
-   testing.
+   testing. Dropped (2026-11): doors open from terminals, batteries go
+   straight into the C.A.T. and papers are the only things you hold, so
+   there's little to touch. Terminals by finger got as far as an
+   experimental option (terminal.lua; see TODO).
 
 uevrlib is the basis here, not a dependency to copy wholesale. Its modules
 are large and generic, so port the pieces with tests, the way game.lua and

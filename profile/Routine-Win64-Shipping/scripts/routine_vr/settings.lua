@@ -49,8 +49,18 @@ M.defaults = {
 
     -- Lean the interaction ray onto usable things near where you point (grab.lua).
     grab_assist = true,
-    grab_assist_angle = 12.0,      -- degrees off that still counts
+    grab_assist_angle = 9.0,       -- degrees off that still counts (12 reached across rooms)
     -- Papers and items you pick up, at their size in the world (held.lua).
+    -- Press terminal screens with your index fingertip (terminal.lua).
+    -- Experimental, off: worked on door terminals once tuned, but not on the
+    -- elevator terminal; pointing and the trigger work everywhere.
+    terminal_touch = false,
+    terminal_cursor = true,        -- near a screen the game's ray starts at your fingertip
+    terminal_under_tip = true,     -- the cursor lands under the fingertip whatever the wrist angle (off: along the finger)
+    terminal_aim_depth = 3.5,      -- cm in front of the screen's plane that the ray is aimed from (tuned on door terminals)
+    terminal_write_mouse = false,  -- write the screen's cursor directly (broke it: off)
+    terminal_survey = false,       -- dump the terminal's classes once (data/routine_vr_lexi.json)
+    terminal_press_at = 6.0,       -- cm in front of the screen's plane where a touch counts (it sits behind the glass)
     held_fix = true,
     held_size = 1.0,               -- times that size
     held_in_palm = true,           -- in your hand rather than past the fingertips

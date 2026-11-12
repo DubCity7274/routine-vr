@@ -36,6 +36,10 @@
   behind it (those must not take the trigger). `data/routine_vr_notes.json`
   logs each press.
 
+- **D-pad shifting** moved to UEVR's method 1 (left thumbrest + right
+  stick): with method 0 a thumb resting on the right thumbrest turned the
+  left stick into a D-pad and stopped walking. Confirmed.
+
 ## Discord testers
 
 - **Other headsets**: only Quest Touch has been played.
@@ -44,7 +48,13 @@
 
 ## Features
 
-- **Terminals by finger**: press them with the index finger like the
-  C.A.T.'s buttons, instead of pointing.
-- **Physical interaction**: doors, pickups and switches by hand (roadmap
-  in DESIGN.md).
+- **Terminals by finger** (`terminal.lua`): shelved, left in as an
+  experimental checkbox (off). What works: near a screen the camera slides
+  to just off the screen under the fingertip (UEVR's location offset lands
+  mirrored on the camera), so the cursor follows the finger; a touch holds
+  RT and lets go 1 cm back from its deepest point (taps and drags work);
+  the cursor holds still while the trigger is pulled. Tuned on the door
+  terminals (press at 6 cm, aim depth 3.5 cm). The elevator terminal didn't
+  respond and its cursor was off, likely a different screen layout. Writing
+  the screen's MouseLocation corrupts it; the pawn's WidgetInteraction is
+  unused.

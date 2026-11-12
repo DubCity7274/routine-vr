@@ -292,9 +292,9 @@ Any Lua 5.3+ works. On this machine:
 
 ## Status
 
-Beta. Written against UEVR nightly 01143's Lua API and Routine build
-22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn. The
-offline tests cover the mod's logic (298). Not tested yet: other headsets
+1.0. Written against UEVR nightly 01143's Lua API and Routine build
+22236094, and played on a Quest 3 through Proton 11 + OpenXR + WiVRn.
+The offline tests cover the mod's logic (314). Not tested yet: other headsets
 (the layouts are there, but only Touch has been played) and the Windows
 installer. Known issues are in [docs/TODO.md](docs/TODO.md).
 

@@ -15,6 +15,7 @@ local body = require("routine_vr.body")
 local motion_hands = require("routine_vr.motion_hands")
 local held = require("routine_vr.held")
 local grab = require("routine_vr.grab")
+local terminal = require("routine_vr.terminal")
 -- Everything is required at load: UEVR only finds the mod's files while
 -- the script is first running (a require from on_frame fails).
 local VERSION = require("routine_vr.version")
@@ -189,6 +190,15 @@ local function draw_hands_body()
     if settings.get("grab_assist") then
         slider_setting("How far off you can point (deg)", "grab_assist_angle", 2, 30)
         imgui.text(grab.status)
+    end
+    checkbox_setting("Press terminal screens with your fingertip (experimental)", "terminal_touch")
+    if settings.get("terminal_touch") then
+        slider_setting("Touch counts this far in front of the screen (cm)", "terminal_press_at", -3, 12)
+        checkbox_setting("Cursor under the fingertip for relaxed taps (off: along the finger, for pokes)", "terminal_under_tip")
+        if settings.get("terminal_under_tip") then
+            slider_setting("Cursor aim depth (cm; move until a relaxed tap lines up)", "terminal_aim_depth", -4, 10)
+        end
+        imgui.text(terminal.status)
     end
     checkbox_setting("Papers and items you pick up keep their real size", "held_fix")
     if settings.get("held_fix") then

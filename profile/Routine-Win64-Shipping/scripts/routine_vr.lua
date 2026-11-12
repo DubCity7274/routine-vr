@@ -17,6 +17,7 @@ local body = require("routine_vr.body")
 local health = require("routine_vr.health")
 local held = require("routine_vr.held")
 local grab = require("routine_vr.grab")
+local terminal = require("routine_vr.terminal")
 local ui = require("routine_vr.ui")
 
 settings.load()
@@ -43,11 +44,15 @@ uevr.sdk.callbacks.on_pre_engine_tick(function(engine, delta)
     health.tick(delta)
     held.tick(delta)
     grab.tick(delta)
+    terminal.tick(delta)
 end)
 
 uevr.sdk.callbacks.on_early_calculate_stereo_view_offset(function(device, view_index, world_to_meters, position, rotation, is_double)
     game.on_stereo_view(view_index)
-    if view_index == 0 then held.apply(true) end
+    if view_index == 0 then
+        held.apply(true)
+        terminal.apply_late()
+    end
 end)
 
 uevr.sdk.callbacks.on_xinput_get_state(function(retval, user_index, state)
@@ -84,4 +89,5 @@ uevr.sdk.callbacks.on_script_reset(function()
     health.reset()
     held.reset()
     grab.reset()
+    terminal.reset()
 end)

@@ -221,6 +221,8 @@ local function params_of(comp, fn)
     return list
 end
 
+M.params_of = params_of
+
 local function fill_vector(v, pt)
     pcall(function() v.X, v.Y, v.Z = pt.X, pt.Y, pt.Z end)
 end

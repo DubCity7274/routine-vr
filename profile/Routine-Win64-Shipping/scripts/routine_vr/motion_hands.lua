@@ -1127,6 +1127,24 @@ function M.controller_pose(side)
     return loc, rot
 end
 
+-- A world point in a controller's frame: forward, right, up (cm).
+function M.controller_axes_point(loc, rot, p)
+    local f, r, u = hands.rotator_axes(rot.Pitch, rot.Yaw, rot.Roll)
+    local d = { x = p.X - loc.X, y = p.Y - loc.Y, z = p.Z - loc.Z }
+    local function dot(a, b) return a.x * b.x + a.y * b.y + a.z * b.z end
+    return dot(d, f), dot(d, r), dot(d, u)
+end
+
+-- A short buzz on one hand.
+function M.buzz(side)
+    pcall(function()
+        local vr = uevr.params.vr
+        local src -- (not "a and b or c": the left source can be nil)
+        if side == "left" then src = vr.get_left_joystick_source() else src = vr.get_right_joystick_source() end
+        vr.trigger_haptic_vibration(0.0, 0.05, 1.0, 0.6, src)
+    end)
+end
+
 -- World position of a hand's index fingertip, or nil (touch.lua).
 function M.fingertip(side)
     if M.mesh == nil or not shown then return nil end
