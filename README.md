@@ -46,6 +46,10 @@ Not included (get them from their authors):
   [Visibility Tweaks on Nexus Mods](https://www.nexusmods.com/routine/mods/1) (optional, removes
   the fisheye, grain and sharpen effects; Routine VR drives its `rpp`
   console commands). Download its zip and pass it to the installer.
+- Gametism's [No-Intro-Splash](https://www.nexusmods.com/routine/mods/7)
+  (recommended, not required at all): skips the startup splash screens, so
+  you land in the main menu facing the right way. Install it as its page
+  describes; the installers don't handle it.
 
 ## Install on Windows
 
